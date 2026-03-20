@@ -22,6 +22,7 @@ import {
   Plus
 } from "lucide-react";
 import { useAuth } from "@/src/context/AuthContext";
+import { API_URL } from "@/src/lib/api";
 
 interface Product {
   _id: string;
@@ -42,7 +43,7 @@ export default function ExcelModeView() {
 
   const fetchProducts = async () => {
     try {
-      const response = await fetch("http://127.0.0.1:5000/api/products", {
+      const response = await fetch(`${API_URL}/api/products`, {
         headers: {
           Authorization: `Bearer ${currentUser?.token}`,
         },
@@ -65,7 +66,7 @@ export default function ExcelModeView() {
   const handleUpdate = async (id: string, field: string, value: any) => {
     setSavingId(id);
     try {
-      const response = await fetch(`http://127.0.0.1:5000/api/products/${id}`, {
+      const response = await fetch(`${API_URL}/api/products/${id}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -89,7 +90,7 @@ export default function ExcelModeView() {
 
   const handleAddRow = async () => {
     try {
-      const response = await fetch("http://127.0.0.1:5000/api/products", {
+      const response = await fetch(`${API_URL}/api/products`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -118,7 +119,7 @@ export default function ExcelModeView() {
     if (!confirm("Are you sure you want to delete this product?")) return;
     
     try {
-      const response = await fetch(`http://127.0.0.1:5000/api/products/${id}`, {
+      const response = await fetch(`${API_URL}/api/products/${id}`, {
         method: 'DELETE',
         headers: {
           Authorization: `Bearer ${currentUser?.token}`,

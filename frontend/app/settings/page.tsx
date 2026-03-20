@@ -10,7 +10,8 @@ import { Switch } from "@/components/ui/switch";
 import { Separator } from "@/components/ui/separator";
 import { useAuth } from "@/src/context/AuthContext";
 import { toast } from "sonner";
-import { Loader2, ShieldCheck, User as UserIcon, Lock } from "lucide-react";
+import { User, Mail, Shield, ShieldCheck, Lock, UserCog, Settings as SettingsIcon, Loader2, User as UserIcon } from "lucide-react";
+import { API_URL } from "@/src/lib/api";
 
 export default function SettingsPage() {
   const { user } = useAuth();
@@ -33,7 +34,7 @@ export default function SettingsPage() {
 
     setUpdating(true);
     try {
-      const response = await fetch("http://127.0.0.1:5000/api/users/profile", {
+      const response = await fetch(`${API_URL}/api/users/profile`, {
         method: "PUT",
         headers: {
           "Content-Type": "application/json",

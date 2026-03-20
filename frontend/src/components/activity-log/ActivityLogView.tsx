@@ -51,6 +51,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { format } from "date-fns";
 import { Badge } from "@/components/ui/badge";
+import { API_URL } from "@/src/lib/api";
 
 interface Activity {
   _id: string;
@@ -114,7 +115,7 @@ export default function ActivityLogView() {
   const fetchActivities = async () => {
     setLoading(true);
     try {
-      let url = `http://127.0.0.1:5000/api/activities?user=${selectedUser}`;
+      let url = `${API_URL}/api/activities?user=${selectedUser}`;
       if (startDate) url += `&startDate=${startDate}`;
       if (endDate) url += `&endDate=${endDate}`;
 
@@ -140,7 +141,7 @@ export default function ActivityLogView() {
 
   const fetchUsers = async () => {
     try {
-      const response = await fetch("http://127.0.0.1:5000/api/users", {
+      const response = await fetch(`${API_URL}/api/users`, {
         headers: {
           Authorization: `Bearer ${currentUser?.token}`,
         },

@@ -24,6 +24,7 @@ import {
   Eye,
   EyeOff
 } from "lucide-react";
+import { API_URL } from "@/src/lib/api";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { cn } from "@/lib/utils";
@@ -53,7 +54,7 @@ export default function UsersPage() {
 
   const fetchUsers = async () => {
     try {
-      const response = await fetch("http://127.0.0.1:5000/api/users", {
+      const response = await fetch(`${API_URL}/api/users`, {
         headers: {
           Authorization: `Bearer ${currentUser?.token}`,
         },
@@ -83,7 +84,7 @@ export default function UsersPage() {
     setCreating(true);
 
     try {
-      const response = await fetch("http://127.0.0.1:5000/api/users", {
+      const response = await fetch(`${API_URL}/api/users`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -119,7 +120,7 @@ export default function UsersPage() {
     }
 
     try {
-      const response = await fetch(`http://127.0.0.1:5000/api/users/${id}`, {
+      const response = await fetch(`${API_URL}/api/users/${id}`, {
         method: "DELETE",
         headers: {
           Authorization: `Bearer ${currentUser?.token}`,
