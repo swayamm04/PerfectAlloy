@@ -22,12 +22,21 @@ import {
   Calendar,
   X,
   Eye,
-  EyeOff
+  EyeOff,
+  Edit2
 } from "lucide-react";
 import { API_URL } from "@/src/lib/api";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { cn } from "@/lib/utils";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Building2 } from "lucide-react";
 
 interface UserData {
   _id: string;
@@ -35,6 +44,15 @@ interface UserData {
   email: string;
   role: string;
   createdAt?: string;
+  department?: {
+    _id: string;
+    name: string;
+  };
+}
+
+interface Department {
+  _id: string;
+  name: string;
 }
 
 export default function UsersPage() {
@@ -44,6 +62,7 @@ export default function UsersPage() {
   const [creating, setCreating] = useState(false);
   const [showAddForm, setShowAddForm] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
+  const [editingUser, setEditingUser] = useState<UserData | null>(null);
   
   // Form state
   const [name, setName] = useState("");
@@ -51,6 +70,8 @@ export default function UsersPage() {
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [role, setRole] = useState("admin");
+  const [department, setDepartment] = useState("");
+  const [departments, setDepartments] = useState<Department[]>([]);
 
   const fetchUsers = async () => {
     try {
@@ -73,9 +94,26 @@ export default function UsersPage() {
     }
   };
 
+  const fetchDepartments = async () => {
+    try {
+      const response = await fetch(`${API_URL}/api/departments`, {
+        headers: {
+          Authorization: `Bearer ${currentUser?.token}`,
+        },
+      });
+      const data = await response.json();
+      if (response.ok) {
+        setDepartments(data);
+      }
+    } catch (error) {
+      console.error("Error fetching departments:", error);
+    }
+  };
+
   useEffect(() => {
     if (currentUser?.role === "super-admin") {
       fetchUsers();
+      fetchDepartments();
     }
   }, [currentUser]);
 
@@ -84,34 +122,62 @@ export default function UsersPage() {
     setCreating(true);
 
     try {
-      const response = await fetch(`${API_URL}/api/users`, {
-        method: "POST",
+      const url = editingUser 
+        ? `${API_URL}/api/users/${editingUser._id}` 
+        : `${API_URL}/api/users`;
+      
+      const method = editingUser ? "PUT" : "POST";
+
+      const response = await fetch(url, {
+        method,
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${currentUser?.token}`,
         },
-        body: JSON.stringify({ name, email, password, role }),
+        body: JSON.stringify({ name, email, password, role, department }),
       });
 
       const data = await response.json();
 
       if (response.ok) {
-        toast.success("Admin created successfully!");
+        toast.success(editingUser ? "User updated successfully!" : "User created successfully!");
         setName("");
         setEmail("");
         setPassword("");
+        setDepartment("");
+        setEditingUser(null);
         setShowPassword(false);
         setShowAddForm(false);
         fetchUsers();
       } else {
-        toast.error(data.message || "Failed to create admin");
+        toast.error(data.message || "Failed to save user");
       }
     } catch (error) {
-      console.error("Error creating user:", error);
-      toast.error("An error occurred while creating the admin");
+      console.error("Error saving user:", error);
+      toast.error("An error occurred while saving the user");
     } finally {
       setCreating(false);
     }
+  };
+
+  const handleEditClick = (u: UserData) => {
+    setEditingUser(u);
+    setName(u.name);
+    setEmail(u.email);
+    setRole(u.role);
+    setDepartment(u.department?._id || "");
+    setPassword(""); // Don't pre-fill password
+    setShowAddForm(true);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const handleCancel = () => {
+    setEditingUser(null);
+    setName("");
+    setEmail("");
+    setPassword("");
+    setDepartment("");
+    setShowAddForm(false);
   };
 
   const handleDeleteUser = async (id: string) => {
@@ -186,7 +252,7 @@ export default function UsersPage() {
             <p className="text-muted-foreground mt-1">Manage user access to the system</p>
           </div>
           <Button 
-            onClick={() => setShowAddForm(!showAddForm)}
+            onClick={showAddForm ? handleCancel : () => setShowAddForm(true)}
             className={cn(
               "shadow-lg transition-all duration-300 gap-2 h-11 px-6 font-semibold",
               showAddForm ? "bg-muted text-muted-foreground hover:bg-muted/80" : "bg-primary hover:bg-primary/90"
@@ -204,10 +270,10 @@ export default function UsersPage() {
               <CardHeader className="pb-4">
                 <CardTitle className="text-xl flex items-center gap-2">
                   <UserPlus className="h-5 w-5 text-primary" />
-                  Create New User
+                  {editingUser ? "Edit User" : "Create New User"}
                 </CardTitle>
                 <CardDescription>
-                  Enter the details below to add a new user to the system.
+                  {editingUser ? "Update the user details below." : "Enter the details below to add a new user to the system."}
                 </CardDescription>
               </CardHeader>
               <CardContent>
@@ -245,35 +311,57 @@ export default function UsersPage() {
                       />
                     </div>
                   </div>
-                  <div className="space-y-2 flex flex-col justify-end">
-                    <Label htmlFor="password" className="text-sm font-semibold mb-2">Password</Label>
-                    <div className="relative">
-                      <Lock className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
-                      <Input
-                        id="password"
-                        type={showPassword ? "text" : "password"}
-                        placeholder="••••••••"
-                        className="pl-10 pr-10 h-11 bg-background"
-                        value={password}
-                        onChange={(e) => setPassword(e.target.value)}
-                        required
-                      />
-                      <button
-                        type="button"
-                        onClick={() => setShowPassword(!showPassword)}
-                        className="absolute right-3 top-3 text-muted-foreground hover:text-foreground transition-colors"
-                      >
-                        {showPassword ? (
-                          <EyeOff className="h-4 w-4" />
-                        ) : (
-                          <Eye className="h-4 w-4" />
-                        )}
-                      </button>
+                  {!editingUser && (
+                    <div className="space-y-2 flex flex-col justify-end">
+                      <Label htmlFor="password" className="text-sm font-semibold mb-2">Password</Label>
+                      <div className="relative">
+                        <Lock className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+                        <Input
+                          id="password"
+                          type={showPassword ? "text" : "password"}
+                          placeholder="••••••••"
+                          className="pl-10 pr-10 h-11 bg-background"
+                          value={password}
+                          onChange={(e) => setPassword(e.target.value)}
+                          required
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowPassword(!showPassword)}
+                          className="absolute right-3 top-3 text-muted-foreground hover:text-foreground transition-colors"
+                        >
+                          {showPassword ? (
+                            <EyeOff className="h-4 w-4" />
+                          ) : (
+                            <Eye className="h-4 w-4" />
+                          )}
+                        </button>
+                      </div>
                     </div>
-                  </div>
+                  )}
+                  {role !== 'super-admin' && (
+                    <div className="space-y-2">
+                      <Label htmlFor="department" className="text-sm font-semibold">Department</Label>
+                      <Select value={department} onValueChange={setDepartment} required={role !== 'super-admin'}>
+                        <SelectTrigger className="h-11 bg-background w-full">
+                          <div className="flex items-center gap-2">
+                            <Building2 className="h-4 w-4 text-muted-foreground" />
+                            <SelectValue placeholder="Select Department" />
+                          </div>
+                        </SelectTrigger>
+                        <SelectContent>
+                          {departments.map((dept) => (
+                            <SelectItem key={dept._id} value={dept._id}>
+                              {dept.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  )}
                   <div className="md:col-span-3 flex justify-end">
                     <Button type="submit" className="h-11 px-8 font-bold" disabled={creating}>
-                      {creating ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : "Create User Account"}
+                      {creating ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : (editingUser ? "Update User Account" : "Create User Account")}
                     </Button>
                   </div>
                 </form>
@@ -313,6 +401,7 @@ export default function UsersPage() {
                     <TableRow>
                       <TableHead className="py-4 pl-6 text-xs font-bold tracking-wider">User</TableHead>
                       <TableHead className="py-4 text-xs font-bold tracking-wider">Email</TableHead>
+                      <TableHead className="py-4 text-xs font-bold tracking-wider">Department</TableHead>
                       <TableHead className="py-4 text-xs font-bold tracking-wider">Role</TableHead>
                       <TableHead className="py-4 text-xs font-bold tracking-wider">Joined</TableHead>
                       <TableHead className="py-4 pr-6 text-right text-xs font-bold tracking-wider">Actions</TableHead>
@@ -346,6 +435,17 @@ export default function UsersPage() {
                             </div>
                           </TableCell>
                           <TableCell>
+                            <div className="flex items-center gap-2 text-muted-foreground font-medium">
+                              {u.role !== 'super-admin' && (
+                                <>
+                                  <Building2 className="h-4 w-4 opacity-50" />
+                                  {u.department?.name || "N/A"}
+                                </>
+                              )}
+                              {u.role === 'super-admin' && <span className="opacity-30">—</span>}
+                            </div>
+                          </TableCell>
+                          <TableCell>
                             <div className="flex items-center gap-1.5">
                               <span className={cn(
                                 "h-2 w-2 rounded-full ring-2 ring-offset-2",
@@ -365,7 +465,15 @@ export default function UsersPage() {
                               {formatDate(u.createdAt)}
                             </div>
                           </TableCell>
-                          <TableCell className="pr-6 text-right">
+                          <TableCell className="pr-6 text-right space-x-2">
+                            <Button 
+                              variant="ghost" 
+                              size="icon" 
+                              className="text-muted-foreground hover:text-primary hover:bg-primary/10 transition-all"
+                              onClick={() => handleEditClick(u)}
+                            >
+                              <Edit2 className="h-4 w-4" />
+                            </Button>
                             {u.role !== 'super-admin' && (
                               <Button 
                                 variant="ghost" 

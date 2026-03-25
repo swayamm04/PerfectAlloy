@@ -8,6 +8,7 @@ interface User {
   name: string;
   email: string;
   role: 'super-admin' | 'admin';
+  department?: string;
   isAdmin: boolean;
   token: string;
 }

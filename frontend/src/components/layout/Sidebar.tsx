@@ -20,6 +20,8 @@ import {
   ClipboardList,
   ShieldCheck,
   LayoutGrid,
+  Building2,
+  Table,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -40,6 +42,9 @@ const menuItems: MenuItem[] = [
   { icon: ShieldCheck, label: "Activity Log", path: "/activity-log", role: "super-admin" },
   { icon: LayoutGrid, label: "Master Data", path: "/admin/excel-mode", role: "super-admin" },
   { icon: UsersIcon, label: "Users", path: "/users", role: "super-admin" },
+  { icon: Building2, label: "Departments", path: "/departments", role: "super-admin" },
+  { icon: Table, label: "Production Tables", path: "/production-tables", role: "super-admin" },
+  { icon: ClipboardList, label: "Task Queue", path: "/task-queue", role: "admin" },
   { icon: Settings, label: "Settings", path: "/settings" },
 ];
 

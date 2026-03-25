@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { authUser, registerUser, getUsers, deleteUser, updateUserProfile } = require('../controllers/userController');
+const { authUser, registerUser, getUsers, deleteUser, updateUserProfile, updateUser } = require('../controllers/userController');
 const { protect, admin, superAdmin } = require('../middleware/authMiddleware');
 
 router.post('/login', authUser);
@@ -9,6 +9,8 @@ router.route('/')
   .post(protect, superAdmin, registerUser)
   .get(protect, admin, getUsers);
 
-router.route('/:id').delete(protect, superAdmin, deleteUser);
+router.route('/:id')
+  .put(protect, superAdmin, updateUser)
+  .delete(protect, superAdmin, deleteUser);
 
 module.exports = router;

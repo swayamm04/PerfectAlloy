@@ -27,6 +27,10 @@ const userSchema = mongoose.Schema(
       required: true,
       default: false,
     },
+    department: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Department',
+    },
   },
   {
     timestamps: true,
@@ -39,7 +43,7 @@ userSchema.methods.matchPassword = async function (enteredPassword) {
 
 userSchema.pre('save', async function (next) {
   if (!this.isModified('password')) {
-    next();
+    return next();
   }
 
   const salt = await bcrypt.genSalt(10);

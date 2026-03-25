@@ -1,6 +1,7 @@
 "use client";
 
-import { Bell, Search, User, LogOut } from "lucide-react";
+import { Bell, Building2, User, LogOut } from "lucide-react";
+import { Notifications } from "@/src/components/layout/Notifications";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import {
@@ -19,25 +20,27 @@ export const Header = () => {
 
   return (
     <header className="sticky top-0 z-30 flex h-16 items-center justify-between border-b bg-card px-6">
-      {/* Search */}
-      <div className="relative w-full max-w-md">
-        <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-        <Input
-          type="search"
-          placeholder="Search products, orders, customers..."
-          className="pl-10 bg-background"
-        />
+      {/* Department Display */}
+      <div className="flex items-center gap-3">
+        <div className="p-2 rounded-lg bg-primary/10 text-primary">
+          <Building2 className="h-5 w-5" />
+        </div>
+        <div>
+          <h2 className="text-sm font-bold tracking-tight">
+            {user?.role === 'super-admin' 
+              ? "Super Admin" 
+              : ((user?.department as any)?.name ? `Dept of ${(user?.department as any)?.name}` : "No Department")}
+          </h2>
+          <p className="text-[10px] text-muted-foreground font-medium uppercase tracking-wider">
+            Current Workspace
+          </p>
+        </div>
       </div>
 
       {/* Right section */}
       <div className="flex items-center gap-4">
         {/* Notifications */}
-        <Button variant="ghost" size="icon" className="relative">
-          <Bell className="h-5 w-5" />
-          <span className="absolute -right-0.5 -top-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-destructive text-[10px] text-destructive-foreground">
-            3
-          </span>
-        </Button>
+        <Notifications />
 
         {/* User Display (Read-only) */}
         <div className="flex items-center gap-2 px-2 py-1.5 rounded-full bg-muted/30 border border-transparent select-none">
