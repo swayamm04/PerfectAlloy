@@ -374,7 +374,7 @@ export default function TaskQueuePage() {
                       <div className="space-y-2 text-sm border-l-2 border-orange-200 pl-3">
                         <div className="flex justify-between">
                           <span className="text-muted-foreground font-medium">Inward Qty:</span>
-                          <span className="font-bold">{task.stage?.inward?.qty}</span>
+                          <span className="font-bold">{task.stage?.inward?.qty} Units</span>
                         </div>
                       </div>
 
@@ -385,7 +385,7 @@ export default function TaskQueuePage() {
                               <label className="text-xs font-bold uppercase text-muted-foreground">Outward Quantity</label>
                               {Number(actionData.qty) > 0 && Number(actionData.qty) < (task.stage?.inward?.qty || 0) && (
                                 <Badge variant="outline" className="text-orange-600 border-orange-200 bg-orange-50 text-[10px]">
-                                  Deficit: {(task.stage?.inward?.qty || 0) - Number(actionData.qty)}
+                                  Deficit: {(task.stage?.inward?.qty || 0) - Number(actionData.qty)} Units
                                 </Badge>
                               )}
                             </div>
@@ -450,12 +450,8 @@ export default function TaskQueuePage() {
                       <TableRow>
                         <TableHead className="pl-6 font-bold py-4">Part</TableHead>
                         <TableHead className="font-bold uppercase text-[10px] tracking-wider">Production Journey</TableHead>
-                        <TableHead className="font-bold">Open Stock</TableHead>
                         <TableHead className="font-bold">Inward</TableHead>
-                        <TableHead className="font-bold">Cum. Inward</TableHead>
                         <TableHead className="font-bold">Outward</TableHead>
-                        <TableHead className="font-bold">Cum. Outward</TableHead>
-                        <TableHead className="font-bold">Balance</TableHead>
                         <TableHead className="font-bold">Date</TableHead>
                         <TableHead className="pr-6 text-right font-bold">Status</TableHead>
                       </TableRow>
@@ -463,50 +459,38 @@ export default function TaskQueuePage() {
                     <TableBody>
                       {outwarded.length === 0 ? (
                         <TableRow>
-                          <TableCell colSpan={10} className="h-40 text-center text-muted-foreground italic">No production history.</TableCell>
+                          <TableCell colSpan={6} className="h-40 text-center text-muted-foreground italic">No production history.</TableCell>
                         </TableRow>
                       ) : (
-                        outwarded.map(task => {
-                          const openStock = task.stageIndex === 0 ? (task.stage?.inward?.qty || 0) : 0;
-                          const currentStages = task.stages.slice(0, task.stageIndex + 1);
-                          const cumInward = currentStages.reduce((sum, s) => sum + (s.inward?.qty || 0), 0);
-                          const cumOutward = currentStages.reduce((sum, s) => sum + (s.outward?.qty || 0), 0);
-                          const balance = cumInward - cumOutward;
-
-                          return (
-                            <TableRow key={`${task._id}-${task.stageIndex}`} className="hover:bg-muted/30">
-                              <TableCell className="pl-6 py-4">
-                                <div className="flex flex-col">
-                                  <span className="font-bold font-mono text-primary">{task.partNumber}</span>
-                                  <span className="text-[10px] text-muted-foreground">{task.partName || "-"}</span>
-                                </div>
-                              </TableCell>
-                              <TableCell>
-                                <div className="flex flex-col gap-0.5 max-w-[150px]">
-                                  <span className="text-[9px] font-bold text-muted-foreground/60 uppercase leading-none truncate">From: {task.selectedLoop[task.stageIndex - 1]?.name || "Initial"}</span>
-                                  <span className="text-[11px] font-bold text-primary leading-tight truncate">To: {task.selectedLoop[task.stageIndex + 1]?.name || "Delivery"}</span>
-                                </div>
-                              </TableCell>
-                              <TableCell className="font-medium text-muted-foreground">{openStock}</TableCell>
-                              <TableCell className="text-sm font-semibold">{task.stage?.inward?.qty}</TableCell>
-                              <TableCell className="font-bold text-blue-600/80">{cumInward}</TableCell>
-                              <TableCell className="text-sm font-semibold">{task.stage?.outward?.qty}</TableCell>
-                              <TableCell className="font-bold text-green-600/80">{cumOutward}</TableCell>
-                              <TableCell className={cn(
-                                "font-black",
-                                balance > 0 ? "text-orange-600" : "text-primary"
-                              )}>
-                                {balance}
-                              </TableCell>
-                              <TableCell className="text-muted-foreground text-[10px]">
-                                {task.stage?.outward?.sentAt && new Date(task.stage.outward.sentAt).toLocaleString()}
-                              </TableCell>
-                              <TableCell className="pr-6 text-right">
-                                <Badge className="bg-green-100 text-green-700 border-none text-[10px] font-bold">FORWARDED</Badge>
-                              </TableCell>
-                            </TableRow>
-                          );
-                        })
+                        outwarded.map(task => (
+                          <TableRow key={`${task._id}-${task.stageIndex}`} className="hover:bg-muted/30">
+                            <TableCell className="pl-6 py-4">
+                              <div className="flex flex-col">
+                                <span className="font-bold font-mono text-primary">{task.partNumber}</span>
+                                <span className="text-[10px] text-muted-foreground">{task.partName || "-"}</span>
+                              </div>
+                            </TableCell>
+                            <TableCell>
+                              <div className="flex flex-col gap-0.5 max-w-[150px]">
+                                <span className="text-[9px] font-bold text-muted-foreground/60 uppercase leading-none truncate">From: {task.selectedLoop[task.stageIndex - 1]?.name || "Initial"}</span>
+                                <span className="text-[11px] font-bold text-primary leading-tight truncate">To: {task.selectedLoop[task.stageIndex + 1]?.name || "Delivery"}</span>
+                              </div>
+                            </TableCell>
+                            <TableCell className="text-sm">{task.stage?.inward?.qty} U</TableCell>
+                            <TableCell>
+                              <div className="flex flex-col">
+                                <span className="font-bold text-green-600">{task.stage?.outward?.qty} U</span>
+                                {task.stage?.outward?.reason && <span className="text-[9px] text-orange-600 truncate max-w-[80px]">({task.stage.outward.reason})</span>}
+                              </div>
+                            </TableCell>
+                            <TableCell className="text-muted-foreground text-[10px]">
+                              {task.stage?.outward?.sentAt && new Date(task.stage.outward.sentAt).toLocaleString()}
+                            </TableCell>
+                            <TableCell className="pr-6 text-right">
+                              <Badge className="bg-green-100 text-green-700 border-none text-[10px] font-bold">FORWARDED</Badge>
+                            </TableCell>
+                          </TableRow>
+                        ))
                       )}
                     </TableBody>
                   </Table>

@@ -1,6 +1,7 @@
 "use client";
 
-import { Bell, Building2, User, LogOut } from "lucide-react";
+import { useState, useEffect } from "react";
+import { Bell, Building2, User, LogOut, Clock } from "lucide-react";
 import { Notifications } from "@/src/components/layout/Notifications";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -14,13 +15,53 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { useAuth } from "@/src/context/AuthContext";
+import { cn } from "@/lib/utils";
 
 export const Header = () => {
   const { logout, user } = useAuth();
+  const [dateTime, setDateTime] = useState(new Date());
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setDateTime(new Date());
+    }, 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  const formatDate = (date: Date) => {
+    return new Intl.DateTimeFormat('en-GB', {
+      weekday: 'short',
+      day: 'numeric',
+      month: 'short',
+      year: 'numeric'
+    }).format(date);
+  };
+
+  const formatTime = (date: Date) => {
+    return new Intl.DateTimeFormat('en-US', {
+      hour: 'numeric',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: true
+    }).format(date);
+  };
 
   return (
     <header className="sticky top-0 z-30 flex h-16 items-center justify-between border-b bg-card px-6">
-      {/* Department Display */}
+      {/* Real-time Clock (Now on the left) */}
+      <div className="flex flex-col items-start justify-center px-4 py-1 rounded-xl bg-muted/20 border border-muted/30 shadow-inner min-w-[140px]">
+        <div className="flex items-center gap-2">
+          <Clock className="h-3.5 w-3.5 text-primary animate-pulse" />
+          <span className="text-sm font-bold tabular-nums text-foreground tracking-tight">
+            {formatTime(dateTime)}
+          </span>
+        </div>
+        <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-widest">
+          {formatDate(dateTime)}
+        </span>
+      </div>
+
+      {/* Department Display (Now in the middle) */}
       <div className="flex items-center gap-3">
         <div className="p-2 rounded-lg bg-primary/10 text-primary">
           <Building2 className="h-5 w-5" />

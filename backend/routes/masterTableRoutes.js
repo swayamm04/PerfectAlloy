@@ -5,6 +5,7 @@ const {
   getMasterTables,
   getMasterTableById,
   deleteMasterTable,
+  updateMasterTable,
   createMasterTableRow,
   updateMasterTableRow,
   deleteMasterTableRow,
@@ -17,6 +18,7 @@ router.route('/')
 
 router.route('/:id')
   .get(protect, admin, getMasterTableById)
+  .put(protect, superAdmin, updateMasterTable)
   .delete(protect, superAdmin, deleteMasterTable);
 
 router.route('/:id/rows')

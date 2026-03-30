@@ -18,7 +18,8 @@ import {
   Trash2, 
   ExternalLink,
   ShieldCheck,
-  Building2
+  Building2,
+  Pencil
 } from "lucide-react";
 import { API_URL } from "@/src/lib/api";
 import { cn } from "@/lib/utils";
@@ -68,6 +69,7 @@ export default function ProductionTablesPage() {
   const [searchQuery, setSearchQuery] = useState("");
 
   // Form state
+  const [editingTable, setEditingTable] = useState<MasterTable | null>(null);
   const [tableName, setTableName] = useState("");
   const [selectedDepts, setSelectedDepts] = useState<string[]>([]);
 
@@ -108,9 +110,7 @@ export default function ProductionTablesPage() {
   useEffect(() => {
     if (currentUser) {
       fetchTables();
-      if (currentUser.role === "super-admin") {
-        fetchDepartments();
-      }
+      fetchDepartments(); // Always fetch departments to show names
     }
   }, [currentUser]);
 
@@ -123,8 +123,13 @@ export default function ProductionTablesPage() {
     setCreating(true);
 
     try {
-      const response = await fetch(`${API_URL}/api/master-tables`, {
-        method: "POST",
+      const url = editingTable 
+        ? `${API_URL}/api/master-tables/${editingTable._id}` 
+        : `${API_URL}/api/master-tables`;
+      const method = editingTable ? "PUT" : "POST";
+
+      const response = await fetch(url, {
+        method,
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${currentUser?.token}`,
@@ -135,20 +140,29 @@ export default function ProductionTablesPage() {
       const data = await response.json();
 
       if (response.ok) {
-        toast.success("Master Table created successfully!");
+        toast.success(editingTable ? "Master Table updated successfully!" : "Master Table created successfully!");
         setTableName("");
         setSelectedDepts([]);
+        setEditingTable(null);
         setShowAddForm(false);
         fetchTables();
       } else {
-        toast.error(data.message || "Failed to create table");
+        toast.error(data.message || `Failed to ${editingTable ? 'update' : 'create'} table`);
       }
     } catch (error) {
-      console.error("Error creating table:", error);
+      console.error(`Error ${editingTable ? 'updating' : 'creating'} table:`, error);
       toast.error("An error occurred");
     } finally {
       setCreating(false);
     }
+  };
+
+  const handleEditClick = (table: MasterTable) => {
+    setEditingTable(table);
+    setTableName(table.name);
+    setSelectedDepts(table.departments.map(d => d._id));
+    setShowAddForm(true);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   const handleDeleteTable = async (id: string) => {
@@ -191,9 +205,16 @@ export default function ProductionTablesPage() {
             <h1 className="text-3xl font-bold tracking-tight text-foreground">Production Tables</h1>
             <p className="text-muted-foreground mt-1">Manage dynamic production tracking matrices</p>
           </div>
-          {currentUser?.role === "super-admin" && (
+          {(currentUser?.role === "super-admin" || currentUser?.role === "admin") && (
             <Button 
-              onClick={() => setShowAddForm(!showAddForm)}
+              onClick={() => {
+                if (showAddForm) {
+                  setEditingTable(null);
+                  setTableName("");
+                  setSelectedDepts([]);
+                }
+                setShowAddForm(!showAddForm);
+              }}
               className={cn(
                 "shadow-lg transition-all duration-300 gap-2 h-11 px-6 font-semibold",
                 showAddForm ? "bg-muted text-muted-foreground hover:bg-muted/80" : "bg-primary hover:bg-primary/90"
@@ -210,11 +231,11 @@ export default function ProductionTablesPage() {
             <Card className="border-primary/20 bg-primary/5 shadow-xl">
               <CardHeader>
                 <CardTitle className="text-xl flex items-center gap-2">
-                  <TableIcon className="h-5 w-5 text-primary" />
-                  Define New Production Table
+                  {editingTable ? <Pencil className="h-5 w-5 text-primary" /> : <TableIcon className="h-5 w-5 text-primary" />}
+                  {editingTable ? `Edit Table: ${editingTable.name}` : "Define New Production Table"}
                 </CardTitle>
                 <CardDescription>
-                  Choose a name and select the departments that will form the columns.
+                  {editingTable ? "Update the name or change the departments for this table." : "Choose a name and select the departments that will form the columns."}
                 </CardDescription>
               </CardHeader>
               <CardContent>
@@ -306,7 +327,7 @@ export default function ProductionTablesPage() {
                   </div>
                   <div className="flex justify-end pt-4">
                     <Button type="submit" className="h-11 px-8 font-bold" disabled={creating}>
-                      {creating ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : "Initialize Table"}
+                      {creating ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : (editingTable ? "Update Table" : "Initialize Table")}
                     </Button>
                   </div>
                 </form>
@@ -386,14 +407,24 @@ export default function ProductionTablesPage() {
                               </Button>
                             </Link>
                             {currentUser?.role === "super-admin" && (
-                              <Button 
-                                variant="ghost" 
-                                size="icon" 
-                                className="text-muted-foreground hover:text-destructive hover:bg-destructive/10"
-                                onClick={() => handleDeleteTable(t._id)}
-                              >
-                                <Trash2 className="h-4 w-4" />
-                              </Button>
+                              <>
+                                <Button 
+                                  variant="ghost" 
+                                  size="icon" 
+                                  className="text-primary hover:bg-primary/10"
+                                  onClick={() => handleEditClick(t)}
+                                >
+                                  <Pencil className="h-4 w-4" />
+                                </Button>
+                                <Button 
+                                  variant="ghost" 
+                                  size="icon" 
+                                  className="text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+                                  onClick={() => handleDeleteTable(t._id)}
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                </Button>
+                              </>
                             )}
                           </TableCell>
                         </TableRow>

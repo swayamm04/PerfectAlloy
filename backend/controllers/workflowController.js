@@ -8,26 +8,62 @@ const User = require('../models/User');
 // @access  Private/Admin
 const getTaskQueue = async (req, res) => {
   try {
-    const deptId = req.user.department;
+    const { departmentId, startDate, endDate } = req.query;
+    
+    // Default to user's assigned department if not specified (for non-Super Admins or as default)
+    let deptId = departmentId || req.user.department;
+
     if (!deptId) {
-      return res.status(400).json({ message: 'User is not assigned to a department' });
+      if (req.user.role === 'super-admin') {
+        // If super admin and no dept selected, return empty or all? 
+        // User asked for a filter, so returning empty until selected is safer or just pick first.
+        // For now, let's require selection for Super Admin.
+        return res.json([]); 
+      }
+      return res.status(400).json({ message: 'Department assignment required' });
     }
 
+    const deptIdStr = deptId.toString();
+
     // Find all master tables to see where this department is in the sequence
-    const allTables = await MasterTable.find({ departments: deptId });
+    const allTables = await MasterTable.find({ departments: deptIdStr });
     const tableIds = allTables.map(t => t._id);
 
-    // Find rows for these tables where the currentDepartmentIndex points to this user's department
-    // However, finding the index requires matching the deptId in the table.departments array
-    // Let's simplify: Get all rows where the current department in their table's department list matches the user's dept.
+    // Find all rows for these tables
+    const rows = await MasterTableRow.find({ tableId: { $in: tableIds } })
+      .populate('tableId')
+      .populate('selectedLoop');
     
-    // We'll populate the table to iterate through the departments array
-    const rows = await MasterTableRow.find({ tableId: { $in: tableIds } }).populate('tableId');
-    
-    constfilteredRows = rows.filter(row => {
-      const table = row.tableId;
-      const currentDeptId = table.departments[row.currentDepartmentIndex];
-      return currentDeptId && currentDeptId.toString() === deptId.toString();
+    const filteredRows = rows.filter(row => {
+      const loop = row.selectedLoop || [];
+      const currentDeptIdObj = loop[row.currentDepartmentIndex];
+      const currentDeptIdStr = currentDeptIdObj?._id ? currentDeptIdObj._id.toString() : currentDeptIdObj?.toString();
+      const isCurrentlyAtThisDept = currentDeptIdStr === deptIdStr;
+
+      // Check for any past completed stage for this department
+      const hasPastStages = row.stages.some((stage, index) => {
+        const loopDeptIdObj = loop[index];
+        const loopDeptIdStr = loopDeptIdObj?._id ? loopDeptIdObj._id.toString() : loopDeptIdObj?.toString();
+        return loopDeptIdStr === deptIdStr && stage.outward?.isCompleted;
+      });
+
+      // If date filters are provided, check if any stage was completed within the range
+      if (startDate || endDate) {
+        const matchesDate = row.stages.some((stage, index) => {
+          if (loop[index]?.toString() === deptIdStr && stage.outward?.isCompleted && stage.outward.sentAt) {
+            const sentAt = new Date(stage.outward.sentAt);
+            const sDate = startDate ? new Date(startDate) : null;
+            const eDate = endDate ? new Date(endDate) : null;
+            if (sDate && !isNaN(sDate.getTime()) && sentAt < sDate) return false;
+            if (eDate && !isNaN(eDate.getTime()) && sentAt > eDate) return false;
+            return true;
+          }
+          return false;
+        });
+        return matchesDate;
+      }
+
+      return isCurrentlyAtThisDept || hasPastStages;
     });
 
     res.json(filteredRows);
@@ -46,19 +82,27 @@ const acceptInward = async (req, res) => {
     const row = await MasterTableRow.findById(req.params.rowId);
     if (!row) return res.status(404).json({ message: 'Row not found' });
 
-    const deptId = req.user.department.toString();
-    
-    // Initialize stage for this dept if not exists
-    if (!row.stages.has(deptId)) {
-      row.stages.set(deptId, { inward: {}, process: {}, outward: {} });
+    const deptId = req.user.department?.toString();
+    if (!deptId) return res.status(400).json({ message: 'User department not assigned' });
+
+    // Verify it is this department's turn
+    const loop = row.selectedLoop || [];
+    const currentDeptIdInLoop = loop[row.currentDepartmentIndex];
+    if (!currentDeptIdInLoop || currentDeptIdInLoop.toString() !== deptId) {
+      return res.status(403).json({ message: "It is not your department's turn for this task" });
     }
 
-    const stage = row.stages.get(deptId);
+    const stage = row.stages[row.currentDepartmentIndex];
+    if (stage.inward && stage.inward.receivedAt) {
+      return res.status(400).json({ message: 'Inward already accepted' });
+    }
+
     stage.inward = {
       qty,
       receivedAt: new Date(),
       source: source || 'External',
     };
+    stage.process = stage.process || {};
     stage.process.status = 'Processing';
     stage.process.updatedAt = new Date();
 
@@ -81,10 +125,20 @@ const updateProcess = async (req, res) => {
     const row = await MasterTableRow.findById(req.params.rowId);
     if (!row) return res.status(404).json({ message: 'Row not found' });
 
-    const deptId = req.user.department.toString();
-    const stage = row.stages.get(deptId);
+    const deptId = req.user.department?.toString();
+    const currentDeptId = row.selectedLoop[row.currentDepartmentIndex];
+    if (currentDeptId.toString() !== deptId) {
+       return res.status(403).json({ message: "It is not your department's turn for this task" });
+    }
 
-    if (!stage) return res.status(400).json({ message: 'Stage not initialized for this department' });
+    const stage = row.stages[row.currentDepartmentIndex];
+
+    if (!stage || !stage.inward || !stage.inward.receivedAt) {
+      return res.status(400).json({ message: 'Inward not yet accepted' });
+    }
+    if (stage.outward && stage.outward.isCompleted) {
+      return res.status(403).json({ message: 'Cannot edit a completed stage' });
+    }
 
     stage.process.status = status || stage.process.status;
     stage.process.notes = notes || stage.process.notes;
@@ -103,31 +157,45 @@ const updateProcess = async (req, res) => {
 // @route   POST /api/workflow/outward/:rowId
 // @access  Private/Admin
 const completeOutward = async (req, res) => {
-  const { qty } = req.body;
+  const { qty, reason } = req.body;
 
   try {
     const row = await MasterTableRow.findById(req.params.rowId).populate('tableId');
     if (!row) return res.status(404).json({ message: 'Row not found' });
 
-    const deptId = req.user.department.toString();
-    const stage = row.stages.get(deptId);
+    const deptId = req.user.department?.toString();
+    
+    // Verify it is this department's turn
+    const loop = row.selectedLoop || [];
+    const currentDeptId = loop[row.currentDepartmentIndex];
+    if (!currentDeptId || currentDeptId.toString() !== deptId) {
+      return res.status(403).json({ message: "It is not your department's turn for this task" });
+    }
 
-    if (!stage) return res.status(400).json({ message: 'Stage not initialized' });
+    const stage = row.stages[row.currentDepartmentIndex];
+    
+    if (!stage || !stage.inward || !stage.inward.receivedAt) {
+      return res.status(400).json({ message: 'Inward not yet accepted' });
+    }
+    if (stage.outward && stage.outward.isCompleted) {
+      return res.status(400).json({ message: 'Stage is already completed' });
+    }
 
     stage.outward = {
       qty,
+      reason: reason || "",
       sentAt: new Date(),
       isCompleted: true,
     };
+    stage.process = stage.process || {};
     stage.process.status = 'Completed';
 
-    // Move to next department in table sequence
-    const table = row.tableId;
+    // Move to next department in part's selected loop
     const nextIndex = row.currentDepartmentIndex + 1;
     
-    if (nextIndex < table.departments.length) {
+    if (nextIndex < loop.length) {
       row.currentDepartmentIndex = nextIndex;
-      const nextDeptId = table.departments[nextIndex];
+      const nextDeptId = loop[nextIndex];
 
       // Notify users of the next department
       await Notification.create({

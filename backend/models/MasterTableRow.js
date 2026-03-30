@@ -7,19 +7,32 @@ const masterTableRowSchema = mongoose.Schema(
       ref: 'MasterTable',
       required: true,
     },
+    partName: {
+      type: String,
+      trim: true,
+    },
     partNumber: {
       type: String,
       required: true,
       trim: true,
     },
+    material: {
+      type: String,
+      trim: true,
+    },
+    selectedLoop: [
+      {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Department',
+      },
+    ],
     currentDepartmentIndex: {
       type: Number,
-      default: 0, // Points to the index in MasterTable.departments
+      default: 0, // Points to the index in selectedLoop
     },
-    // Map where keys are Department IDs and values are objects containing stage data
-    stages: {
-      type: Map,
-      of: {
+    // Array of objects containing stage data, where stages[i] corresponds to selectedLoop[i]
+    stages: [
+      {
         inward: {
           qty: { type: Number, default: 0 },
           receivedAt: { type: Date },
@@ -31,13 +44,13 @@ const masterTableRowSchema = mongoose.Schema(
           notes: { type: String },
         },
         outward: {
-          qty: { type: Number, default: 0 },
-          sentAt: { type: Date },
+          qty: Number,
+          sentAt: Date,
           isCompleted: { type: Boolean, default: false },
+          reason: String,
         },
       },
-      default: {},
-    },
+    ],
   },
   {
     timestamps: true,
