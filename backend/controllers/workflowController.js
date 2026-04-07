@@ -157,7 +157,7 @@ const updateProcess = async (req, res) => {
 // @route   POST /api/workflow/outward/:rowId
 // @access  Private/Admin
 const completeOutward = async (req, res) => {
-  const { qty, reason } = req.body;
+  const { qty, rejectionQty, reason } = req.body;
 
   try {
     const row = await MasterTableRow.findById(req.params.rowId).populate('tableId');
@@ -183,6 +183,7 @@ const completeOutward = async (req, res) => {
 
     stage.outward = {
       qty,
+      rejectionQty: rejectionQty || 0,
       reason: reason || "",
       sentAt: new Date(),
       isCompleted: true,

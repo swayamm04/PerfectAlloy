@@ -118,7 +118,7 @@ const updateMasterTableRow = async (req, res) => {
       row.material = material !== undefined ? material : row.material;
       if (selectedLoop) {
         row.selectedLoop = selectedLoop;
-        
+
         // Sync stages array length with the new loop length
         while (row.stages.length < selectedLoop.length) {
           row.stages.push({
@@ -127,7 +127,7 @@ const updateMasterTableRow = async (req, res) => {
             process: { notes: "" }
           });
         }
-        
+
         // If the loop is shortened, we trim the stages to maintain consistency
         if (row.stages.length > selectedLoop.length) {
           row.stages = row.stages.slice(0, selectedLoop.length);
@@ -137,7 +137,7 @@ const updateMasterTableRow = async (req, res) => {
         if (row.currentDepartmentIndex >= selectedLoop.length) {
           row.currentDepartmentIndex = Math.max(0, selectedLoop.length - 1);
         }
-        
+
         row.markModified('stages');
       }
 
@@ -146,17 +146,17 @@ const updateMasterTableRow = async (req, res) => {
         // statusValues can be:
         // 1. An object with index keys: { "0": 50, "2": 45 }
         // 2. An object with deptId keys (deprecated/ambiguous): { deptId: 50 }
-        
+
         Object.entries(statusValues).forEach(([key, value]) => {
           const index = parseInt(key);
           const val = Number(value);
-          
+
           if (!isNaN(index) && row.stages[index]) {
             // Index-based update (preferred for sequential)
             const stage = row.stages[index];
             if (stage.inward && stage.inward.receivedAt) {
-              stage.outward = { 
-                ...stage.outward, 
+              stage.outward = {
+                ...stage.outward,
                 qty: val,
                 isCompleted: true,
                 sentAt: stage.outward?.sentAt || new Date()
@@ -168,8 +168,8 @@ const updateMasterTableRow = async (req, res) => {
             if (firstIndex !== -1 && row.stages[firstIndex]) {
               const stage = row.stages[firstIndex];
               if (stage.inward && stage.inward.receivedAt) {
-                stage.outward = { 
-                  ...stage.outward, 
+                stage.outward = {
+                  ...stage.outward,
                   qty: val,
                   isCompleted: true,
                   sentAt: stage.outward?.sentAt || new Date()

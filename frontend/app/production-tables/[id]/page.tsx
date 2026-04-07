@@ -10,11 +10,11 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
-import { 
-  Plus, 
-  Loader2, 
-  Save, 
-  Trash2, 
+import {
+  Plus,
+  Loader2,
+  Save,
+  Trash2,
   ArrowLeft,
   Settings,
   HardDrive,
@@ -45,7 +45,7 @@ import {
   CommandItem,
   CommandList,
 } from "@/components/ui/command";
-import { 
+import {
   Tooltip,
   TooltipContent,
   TooltipProvider,
@@ -72,6 +72,7 @@ interface Row {
   currentDepartmentIndex: number;
   selectedLoop: string[];
   stages: any[];
+  createdAt?: string;
 }
 
 export default function TableViewPage() {
@@ -133,11 +134,11 @@ export default function TableViewPage() {
           "Content-Type": "application/json",
           Authorization: `Bearer ${currentUser?.token}`,
         },
-        body: JSON.stringify({ 
+        body: JSON.stringify({
           partName: newPartName,
-          partNumber: newPartNo, 
+          partNumber: newPartNo,
           material: newMaterial,
-          selectedLoop 
+          selectedLoop
         }),
       });
 
@@ -158,15 +159,23 @@ export default function TableViewPage() {
   };
 
   const toggleDeptInLoop = (deptId: string) => {
-    if (selectedLoop.length > 0 && selectedLoop[selectedLoop.length - 1] === deptId) {
-      toast.error("Process cannot be repeated immediately");
-      return;
-    }
     setSelectedLoop(prev => [...prev, deptId]);
   };
 
-  const removeLastFromLoop = () => {
-    setSelectedLoop(prev => prev.slice(0, -1));
+  const getSlotLabel = (row: Row, index: number) => {
+    // If no createdAt, use current date as fallback (for newly added rows not yet saved)
+    const date = new Date(row.createdAt || new Date());
+    const ddmm = `${date.getDate().toString().padStart(2, '0')}${(date.getMonth() + 1).toString().padStart(2, '0')}`;
+
+    // Calculate visit number for THIS department at THIS specific stage index
+    const currentDeptId = row.selectedLoop[index];
+    const visitNumber = row.selectedLoop.slice(0, index).filter(id => id === currentDeptId).length + 1;
+
+    return `S-${ddmm}-${visitNumber}`;
+  };
+
+  const removeStepByIndex = (index: number) => {
+    setSelectedLoop(prev => prev.filter((_, i) => i !== index));
   };
 
   const clearLoop = () => {
@@ -203,9 +212,9 @@ export default function TableViewPage() {
           "Content-Type": "application/json",
           Authorization: `Bearer ${currentUser?.token}`,
         },
-        body: JSON.stringify({ 
+        body: JSON.stringify({
           ...tempRowFields,
-          statusValues: tempRowData 
+          statusValues: tempRowData
         }),
       });
 
@@ -293,27 +302,27 @@ export default function TableViewPage() {
               <div className="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
                 <div className="space-y-1">
                   <label className="text-[10px] font-bold uppercase text-muted-foreground ml-1">Part Name</label>
-                  <Input 
-                    placeholder="Part Name" 
-                    className="h-10 bg-background border-muted-foreground/20" 
+                  <Input
+                    placeholder="Part Name"
+                    className="h-10 bg-background border-muted-foreground/20"
                     value={newPartName}
                     onChange={(e) => setNewPartName(e.target.value)}
                   />
                 </div>
                 <div className="space-y-1">
                   <label className="text-[10px] font-bold uppercase text-muted-foreground ml-1">Part No.</label>
-                  <Input 
-                    placeholder="Part No." 
-                    className="h-10 bg-background border-muted-foreground/20" 
+                  <Input
+                    placeholder="Part No."
+                    className="h-10 bg-background border-muted-foreground/20"
                     value={newPartNo}
                     onChange={(e) => setNewPartNo(e.target.value)}
                   />
                 </div>
                 <div className="space-y-1">
                   <label className="text-[10px] font-bold uppercase text-muted-foreground ml-1">Material</label>
-                  <Input 
-                    placeholder="Material" 
-                    className="h-10 bg-background border-muted-foreground/20" 
+                  <Input
+                    placeholder="Material"
+                    className="h-10 bg-background border-muted-foreground/20"
                     value={newMaterial}
                     onChange={(e) => setNewMaterial(e.target.value)}
                   />
@@ -325,8 +334,8 @@ export default function TableViewPage() {
                       <PopoverTrigger asChild>
                         <Button variant="outline" className="h-10 w-full justify-between bg-background border-muted-foreground/20 overflow-hidden text-xs">
                           <span className="truncate">
-                            {selectedLoop.length > 0 
-                              ? `${selectedLoop.length} Steps Sequence` 
+                            {selectedLoop.length > 0
+                              ? `${selectedLoop.length} Steps Sequence`
                               : "Add Steps..."}
                           </span>
                           <Plus className="ml-2 h-3 w-3 shrink-0 opacity-50" />
@@ -344,12 +353,10 @@ export default function TableViewPage() {
                                   <CommandItem
                                     key={dept._id}
                                     value={dept.name}
-                                    onSelect={() => !isDuplicate && toggleDeptInLoop(dept._id)}
-                                    className={cn(isDuplicate && "opacity-50 cursor-not-allowed")}
+                                    onSelect={() => toggleDeptInLoop(dept._id)}
                                   >
                                     <div className="flex flex-col">
                                       <span className="font-medium">{dept.name}</span>
-                                      {isDuplicate && <span className="text-[10px] text-destructive">Already active at previous step</span>}
                                     </div>
                                     <Plus className="ml-auto h-3 w-3 opacity-50" />
                                   </CommandItem>
@@ -360,10 +367,7 @@ export default function TableViewPage() {
                         </Command>
                       </PopoverContent>
                     </Popover>
-                    <Button variant="outline" size="icon" onClick={removeLastFromLoop} disabled={selectedLoop.length === 0} title="Remove Last Step">
-                      <X className="h-4 w-4" />
-                    </Button>
-                    <Button size="default" onClick={handleAddRow} className="h-10 font-bold px-6">
+                    <Button size="default" onClick={handleAddRow} className="h-10 font-bold px-6 ml-2">
                       Add Row
                     </Button>
                   </div>
@@ -384,13 +388,20 @@ export default function TableViewPage() {
                       const dept = table.departments.find(d => d._id === deptId);
                       return (
                         <div key={`${deptId}-${index}`} className="flex items-center gap-2 group">
-                          <div className="flex items-center h-8 bg-background border rounded-lg overflow-hidden shadow-sm border-primary/20 hover:border-primary transition-all">
+                          <div className="flex items-center h-8 bg-background border rounded-lg shadow-sm border-primary/20 hover:border-primary transition-all pr-0 overflow-hidden">
                             <div className="bg-primary text-primary-foreground px-2 h-full flex items-center justify-center text-[10px] font-bold border-r">
-                              {index + 1}
+                              S-{new Date().getDate().toString().padStart(2, '0')}${(new Date().getMonth() + 1).toString().padStart(2, '0')}-{selectedLoop.slice(0, index).filter(id => id === deptId).length + 1}
                             </div>
                             <div className="px-3 text-xs font-semibold whitespace-nowrap">
                               {dept?.name || "Unknown"}
                             </div>
+                            <button
+                              onClick={() => removeStepByIndex(index)}
+                              className="h-full px-2 hover:bg-red-50 text-muted-foreground hover:text-red-500 border-l transition-colors"
+                              title="Remove step"
+                            >
+                              <X className="h-3 w-3" />
+                            </button>
                           </div>
                           {index < selectedLoop.length - 1 && (
                             <div className="text-muted-foreground/40 font-bold">
@@ -436,7 +447,7 @@ export default function TableViewPage() {
                       <TableRow key={row._id} className="hover:bg-muted/20 transition-colors">
                         <TableCell className="border-r font-medium">
                           {isEditing ? (
-                            <Input 
+                            <Input
                               value={tempRowFields.partName}
                               onChange={(e) => setTempRowFields(prev => ({ ...prev, partName: e.target.value }))}
                               className="h-8 text-xs"
@@ -445,7 +456,7 @@ export default function TableViewPage() {
                         </TableCell>
                         <TableCell className="font-bold border-r bg-muted/5 px-4 py-3">
                           {isEditing ? (
-                            <Input 
+                            <Input
                               value={tempRowFields.partNumber}
                               onChange={(e) => setTempRowFields(prev => ({ ...prev, partNumber: e.target.value }))}
                               className="h-8 text-xs font-bold"
@@ -454,21 +465,21 @@ export default function TableViewPage() {
                         </TableCell>
                         <TableCell className="border-r">
                           {isEditing ? (
-                            <Input 
+                            <Input
                               value={tempRowFields.material}
                               onChange={(e) => setTempRowFields(prev => ({ ...prev, material: e.target.value }))}
                               className="h-8 text-xs"
                             />
                           ) : row.material || "-"}
                         </TableCell>
-                        
+
                         {table.departments.map(dept => {
                           const deptStages = (row.stages || [])
                             .map((s, idx) => ({ ...s, index: idx, deptId: row.selectedLoop[idx] }))
                             .filter(s => s.deptId === dept._id);
-                          
+
                           const isInLoop = deptStages.length > 0;
-                          
+
                           return (
                             <TableCell key={dept._id} className={cn(
                               "p-0 border-r text-center align-middle relative",
@@ -480,26 +491,37 @@ export default function TableViewPage() {
                                 <div className="px-1 py-1 text-[11px] font-medium min-h-[50px] flex flex-col items-center justify-center gap-2 group/cell">
                                   {deptStages.map((stage, sIdx) => {
                                     const hasInward = stage.inward && stage.inward.receivedAt;
-                                    
+
                                     return (
                                       <div key={stage.index} className={cn(
                                         "w-full flex flex-col items-center gap-1 py-1",
                                         sIdx > 0 && "border-t border-muted/30 pt-2"
                                       )}>
                                         {isEditing ? (
-                                          <input 
-                                            className={cn(
-                                              "w-full h-8 px-2 bg-primary/5 focus:bg-primary/10 transition-colors text-center border-none outline-none font-bold text-xs rounded",
-                                              !hasInward && "opacity-30 cursor-not-allowed"
-                                            )}
-                                            placeholder={!hasInward ? "No In" : "Qty..."}
-                                            value={tempRowData[stage.index.toString()] || ""}
-                                            onChange={(e) => handleUpdateValue(stage.index, e.target.value)}
-                                            disabled={!hasInward}
-                                          />
+                                          <div className="flex flex-col gap-1 items-center pb-1">
+                                            <div className="text-[9px] font-bold text-primary/60 bg-primary/5 px-1.5 py-0.5 rounded border border-primary/10">
+                                              {getSlotLabel(row, stage.index)}
+                                            </div>
+                                            <input
+                                              className={cn(
+                                                "w-full h-8 px-2 bg-primary/5 focus:bg-primary/10 transition-colors text-center border-none outline-none font-bold text-xs rounded",
+                                                !hasInward && "opacity-30 cursor-not-allowed"
+                                              )}
+                                              placeholder={!hasInward ? "No In" : "Qty..."}
+                                              value={tempRowData[stage.index.toString()] || ""}
+                                              onChange={(e) => handleUpdateValue(stage.index, e.target.value)}
+                                              disabled={!hasInward}
+                                            />
+                                          </div>
                                         ) : (
                                           stage.inward?.receivedAt ? (
                                             <div className="flex flex-col gap-1 items-center">
+                                              <div className="flex items-center justify-between w-full px-2">
+                                                <span className="text-[9px] font-bold text-primary/60">Step {stage.index + 1}</span>
+                                                <Badge variant="outline" className="text-[8px] h-3.5 py-0 border-primary/20 bg-primary/5 text-primary">
+                                                  {getSlotLabel(row, stage.index)}
+                                                </Badge>
+                                              </div>
                                               <div className="flex items-center gap-1 bg-blue-50 text-blue-700 px-1.5 py-0.5 rounded-full text-[9px] border border-blue-100">
                                                 <ArrowDownCircle className="h-2.5 w-2.5" />
                                                 <span>In: {stage.inward.qty}</span>
@@ -559,19 +581,13 @@ export default function TableViewPage() {
                                           <h4 className="text-sm font-bold uppercase tracking-tight">Production Loop</h4>
                                           <div className="flex items-center gap-1">
                                             <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => {
-                                              const newLoop = tempRowFields.selectedLoop.slice(0, -1);
-                                              setTempRowFields(prev => ({ ...prev, selectedLoop: newLoop }));
-                                            }}>
-                                              <XCircle className="h-3 w-3" />
-                                            </Button>
-                                            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => {
                                               setTempRowFields(prev => ({ ...prev, selectedLoop: [] }));
                                             }}>
                                               <Trash2 className="h-3 w-3" />
                                             </Button>
                                           </div>
                                         </div>
-                                        
+
                                         <div className="max-h-[150px] overflow-y-auto space-y-2 py-1 pr-1">
                                           {tempRowFields.selectedLoop.length === 0 ? (
                                             <div className="text-[10px] text-muted-foreground italic text-center py-4 bg-muted/20 rounded border-2 border-dashed">No steps selected</div>
@@ -579,9 +595,18 @@ export default function TableViewPage() {
                                             tempRowFields.selectedLoop.map((deptId, idx) => {
                                               const dept = table.departments.find(d => d._id === deptId);
                                               return (
-                                                <div key={idx} className="flex items-center gap-2 bg-muted/30 p-1.5 rounded-lg border border-muted-foreground/10">
-                                                  <Badge variant="secondary" className="h-5 w-5 p-0 flex items-center justify-center text-[10px] bg-primary text-primary-foreground">{idx+1}</Badge>
+                                                <div key={idx} className="flex items-center gap-2 bg-muted/30 p-1 rounded-lg border border-muted-foreground/10 pr-0 overflow-hidden">
+                                                  <Badge variant="secondary" className="h-5 w-5 p-0 flex items-center justify-center text-[10px] bg-primary text-primary-foreground">{idx + 1}</Badge>
                                                   <span className="text-[11px] font-bold truncate flex-1">{dept?.name || "Unknown"}</span>
+                                                  <button
+                                                    onClick={() => {
+                                                      const newLoop = tempRowFields.selectedLoop.filter((_, i) => i !== idx);
+                                                      setTempRowFields(prev => ({ ...prev, selectedLoop: newLoop }));
+                                                    }}
+                                                    className="h-7 px-2 hover:bg-red-50 text-muted-foreground hover:text-red-500 border-l transition-colors"
+                                                  >
+                                                    <X className="h-3 w-3" />
+                                                  </button>
                                                 </div>
                                               )
                                             })
@@ -599,14 +624,10 @@ export default function TableViewPage() {
                                                   <CommandItem
                                                     key={dept._id}
                                                     onSelect={() => {
-                                                      if (!isLast) {
-                                                        const newLoop = [...tempRowFields.selectedLoop, dept._id];
-                                                        setTempRowFields(prev => ({ ...prev, selectedLoop: newLoop }));
-                                                      } else {
-                                                        toast.error("Cannot repeat immediately");
-                                                      }
+                                                      const newLoop = [...tempRowFields.selectedLoop, dept._id];
+                                                      setTempRowFields(prev => ({ ...prev, selectedLoop: newLoop }));
                                                     }}
-                                                    className={cn("text-[10px] font-medium py-1", isLast && "opacity-50")}
+                                                    className="text-[10px] font-medium py-1"
                                                   >
                                                     {dept.name}
                                                     <Plus className="ml-auto h-3 w-3" />
@@ -620,18 +641,18 @@ export default function TableViewPage() {
                                     </PopoverContent>
                                   </Popover>
 
-                                  <Button 
-                                    variant="ghost" 
-                                    size="icon" 
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
                                     className="h-9 w-9 text-green-600 hover:text-green-700 hover:bg-green-50"
                                     onClick={() => saveRowChanges(row._id)}
                                     disabled={savingRow === row._id}
                                   >
                                     {savingRow === row._id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
                                   </Button>
-                                  <Button 
-                                    variant="ghost" 
-                                    size="icon" 
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
                                     className="h-9 w-9 text-red-500 hover:text-red-700 hover:bg-red-50"
                                     onClick={cancelEditing}
                                   >
@@ -640,24 +661,24 @@ export default function TableViewPage() {
                                 </>
                               ) : (
                                 <>
-                                  <Button 
-                                    variant="ghost" 
-                                    size="icon" 
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
                                     className="h-9 w-9 text-primary hover:bg-primary/10"
                                     onClick={() => startEditing(row)}
                                   >
                                     <Edit2 className="h-4 w-4" />
                                   </Button>
-                                  <Button 
-                                    variant="ghost" 
-                                    size="icon" 
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
                                     className="h-9 w-9 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
                                     onClick={() => handleDeleteRow(row._id)}
                                   >
                                     <Trash2 className="h-4 w-4" />
                                   </Button>
                                 </>
-                              ) }
+                              )}
                             </div>
                           ) : (
                             <Badge variant="secondary" className="text-[10px] font-medium opacity-50 uppercase tracking-tight">View Only</Badge>

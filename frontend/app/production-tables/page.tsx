@@ -9,13 +9,13 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { toast } from "sonner";
-import { 
-  Plus, 
-  Table as TableIcon, 
-  Loader2, 
-  Search, 
-  X, 
-  Trash2, 
+import {
+  Plus,
+  Table as TableIcon,
+  Loader2,
+  Search,
+  X,
+  Trash2,
   ExternalLink,
   ShieldCheck,
   Building2,
@@ -123,8 +123,8 @@ export default function ProductionTablesPage() {
     setCreating(true);
 
     try {
-      const url = editingTable 
-        ? `${API_URL}/api/master-tables/${editingTable._id}` 
+      const url = editingTable
+        ? `${API_URL}/api/master-tables/${editingTable._id}`
         : `${API_URL}/api/master-tables`;
       const method = editingTable ? "PUT" : "POST";
 
@@ -186,14 +186,14 @@ export default function ProductionTablesPage() {
   };
 
   const toggleDept = (deptId: string) => {
-    setSelectedDepts(prev => 
-      prev.includes(deptId) 
-        ? prev.filter(id => id !== deptId) 
+    setSelectedDepts(prev =>
+      prev.includes(deptId)
+        ? prev.filter(id => id !== deptId)
         : [...prev, deptId]
     );
   };
 
-  const filteredTables = tables.filter(t => 
+  const filteredTables = tables.filter(t =>
     t.name.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
@@ -206,7 +206,7 @@ export default function ProductionTablesPage() {
             <p className="text-muted-foreground mt-1">Manage dynamic production tracking matrices</p>
           </div>
           {(currentUser?.role === "super-admin" || currentUser?.role === "admin") && (
-            <Button 
+            <Button
               onClick={() => {
                 if (showAddForm) {
                   setEditingTable(null);
@@ -262,15 +262,15 @@ export default function ProductionTablesPage() {
                             className="w-full justify-between h-11 bg-background"
                           >
                             <div className="flex gap-1 flex-wrap overflow-hidden">
-                              {selectedDepts.length > 0 
+                              {selectedDepts.length > 0
                                 ? selectedDepts
-                                    .map(id => departments.find(d => d._id === id))
-                                    .filter(Boolean)
-                                    .map(d => (
-                                      <Badge key={d?._id} variant="secondary" className="mr-1">
-                                        {d?.name}
-                                      </Badge>
-                                    ))
+                                  .map(id => departments.find(d => d._id === id))
+                                  .filter(Boolean)
+                                  .map(d => (
+                                    <Badge key={d?._id} variant="secondary" className="mr-1">
+                                      {d?.name}
+                                    </Badge>
+                                  ))
                                 : "Select departments..."}
                             </div>
                             <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
@@ -302,7 +302,7 @@ export default function ProductionTablesPage() {
                           </Command>
                         </PopoverContent>
                       </Popover>
-                      
+
                       {/* Selected tags display (Optional, in case the trigger gets crowded) */}
                       {selectedDepts.length > 0 && (
                         <div className="flex flex-wrap gap-2 pt-1">
@@ -312,8 +312,8 @@ export default function ProductionTablesPage() {
                             .map(d => (
                               <Badge key={d?._id} variant="default" className="pl-2 pr-1 py-1 gap-1">
                                 {d?.name}
-                                <X 
-                                  className="h-3 w-3 cursor-pointer hover:text-destructive transition-colors" 
+                                <X
+                                  className="h-3 w-3 cursor-pointer hover:text-destructive transition-colors"
                                   onClick={(e) => {
                                     e.stopPropagation();
                                     if (d) toggleDept(d._id);
@@ -345,8 +345,8 @@ export default function ProductionTablesPage() {
               </CardTitle>
               <div className="relative w-full sm:w-72">
                 <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
-                <Input 
-                  placeholder="Search tables..." 
+                <Input
+                  placeholder="Search tables..."
                   className="pl-10 h-10 bg-background/50 border-muted-foreground/20"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
@@ -408,17 +408,17 @@ export default function ProductionTablesPage() {
                             </Link>
                             {currentUser?.role === "super-admin" && (
                               <>
-                                <Button 
-                                  variant="ghost" 
-                                  size="icon" 
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
                                   className="text-primary hover:bg-primary/10"
                                   onClick={() => handleEditClick(t)}
                                 >
                                   <Pencil className="h-4 w-4" />
                                 </Button>
-                                <Button 
-                                  variant="ghost" 
-                                  size="icon" 
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
                                   className="text-muted-foreground hover:text-destructive hover:bg-destructive/10"
                                   onClick={() => handleDeleteTable(t._id)}
                                 >

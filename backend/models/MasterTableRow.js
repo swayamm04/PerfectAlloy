@@ -45,6 +45,7 @@ const masterTableRowSchema = mongoose.Schema(
         },
         outward: {
           qty: Number,
+          rejectionQty: { type: Number, default: 0 },
           sentAt: Date,
           isCompleted: { type: Boolean, default: false },
           reason: String,
