@@ -88,6 +88,7 @@ export default function TaskQueuePage() {
     reasons: [""] 
   });
 
+  const [isInwardDialogOpen, setIsInwardDialogOpen] = useState(false);
   const [isOutwardDialogOpen, setIsOutwardDialogOpen] = useState(false);
   const [isReasonsDialogOpen, setIsReasonsDialogOpen] = useState(false);
   const [isNewTaskDialogOpen, setIsNewTaskDialogOpen] = useState(false);
@@ -276,6 +277,7 @@ export default function TaskQueuePage() {
         setActionData({ qty: "", rejectionQty: "", notes: "", reason: "", reasons: [""] });
         setActiveAction(null);
         setIsOutwardDialogOpen(false);
+        setIsInwardDialogOpen(false);
         fetchTasks();
       } else {
         const error = await response.json();
@@ -306,14 +308,14 @@ export default function TaskQueuePage() {
 
       const date = new Date(task.createdAt || new Date());
       const ddmm = `${date.getDate().toString().padStart(2, '0')}${(date.getMonth() + 1).toString().padStart(2, '0')}`;
-      const slotLabel = `S-${ddmm}-${visitNumber}`;
+      const heatLabel = `H-${ddmm}-${visitNumber}`;
 
       return {
         ...task,
         stage,
         stageIndex: index,
         visitNumber,
-        slotLabel,
+        slotLabel: heatLabel,
         isCurrentStage: task.currentDepartmentIndex === index,
         loopDeptId
       };
@@ -429,7 +431,6 @@ export default function TaskQueuePage() {
               Balance <Badge variant="secondary" className="ml-2 bg-yellow-100 text-yellow-700">{inProcessRows.length}</Badge>
             </TabsTrigger>
           </TabsList>
-
           <TabsContent value="incoming" className="animate-in slide-in-from-left-4 duration-300">
             <div className="flex justify-between items-center mb-4">
               <h3 className="text-sm font-bold text-muted-foreground uppercase flex items-center gap-2">
@@ -447,271 +448,169 @@ export default function TaskQueuePage() {
                 </Button>
               )}
             </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {incoming.length === 0 ? (
-                <div className="col-span-full h-40 flex items-center justify-center border-2 border-dashed rounded-xl bg-muted/20 text-muted-foreground">
-                  No incoming tasks.
-                </div>
-              ) : (
-                incoming.map(task => {
-                  const prevQty = task.stageIndex > 0 ? task.stages[task.stageIndex - 1]?.outward?.qty : null;
-                  
-                  return (
-                    <Card key={`${task._id}-${task.stageIndex}`} className="border-none shadow-lg hover:shadow-xl transition-all group">
-                      <CardHeader className="pb-3 border-b bg-primary/5">
-                        <div className="flex justify-between items-start">
-                          <div className="flex flex-col">
-                            <CardTitle className="text-xl font-bold font-mono tracking-tight">{task.partNumber}</CardTitle>
-                            <span className="text-xs text-muted-foreground font-semibold">{task.partName || "Unnamed Part"}</span>
-                          </div>
-                          <div className="flex flex-col items-end gap-1">
-                            <Badge variant="outline" className="border-primary/20 text-[10px] uppercase font-bold tracking-wider">
-                              {task.tableId?.name}
-                            </Badge>
-                            <Badge className="bg-primary text-primary-foreground text-[10px] font-bold h-5 px-1.5 border-none">
-                              {task.slotLabel}
-                            </Badge>
-                          </div>
-                        </div>
-                        <div className="mt-4 grid grid-cols-2 gap-2">
-                           <div className="flex flex-col gap-1 bg-background/50 p-2 rounded border border-primary/5">
-                              <div className="flex justify-between items-center w-full">
-                                <span className="text-[9px] font-bold uppercase text-muted-foreground/60 leading-none">From</span>
-                                {prevQty !== null && (
-                                  <Badge className="h-4 px-1 text-[8px] bg-blue-100 text-blue-700 border-none font-black shadow-sm">
-                                    Qty: {prevQty}
-                                  </Badge>
-                                )}
+            
+            <Card className="border-none shadow-xl">
+              <CardContent className="p-0 overflow-x-auto">
+                <Table>
+                  <TableHeader className="bg-muted/50">
+                    <TableRow>
+                      <TableHead className="pl-6 font-bold py-4">Part</TableHead>
+                      <TableHead className="font-bold uppercase text-[10px] tracking-wider">Heat No.</TableHead>
+                      <TableHead className="font-bold uppercase text-[10px] tracking-wider">Journey</TableHead>
+                      {currentUser?.role === 'super-admin' && <TableHead className="font-bold">Step</TableHead>}
+                      <TableHead className="font-bold">Available Qty</TableHead>
+                      <TableHead className="pr-6 text-right font-bold">Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {incoming.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={currentUser?.role === 'super-admin' ? 6 : 5} className="h-40 text-center text-muted-foreground italic">No incoming tasks.</TableCell>
+                      </TableRow>
+                    ) : (
+                      incoming.map(task => {
+                        const prevQty = task.stageIndex > 0 ? task.stages[task.stageIndex - 1]?.outward?.qty : "-";
+                        
+                        return (
+                          <TableRow key={`${task._id}-${task.stageIndex}`} className="hover:bg-muted/30 group font-medium">
+                            <TableCell className="pl-6 py-4">
+                              <div className="flex flex-col">
+                                <span className="font-bold font-mono text-primary text-sm">{task.partNumber}</span>
+                                <span className="text-[10px] text-muted-foreground font-semibold">{task.partName || "-"}</span>
                               </div>
-                              <span className="text-[11px] font-bold text-primary truncate">{task.selectedLoop[task.stageIndex - 1]?.name || "Initial Entry"}</span>
-                           </div>
-                            <div className="flex flex-col gap-1 bg-background/50 p-2 rounded border border-primary/5">
-                               <span className="text-[9px] font-bold uppercase text-muted-foreground/60 leading-none">After Process</span>
-                               <span className="text-[11px] font-bold text-destructive truncate">{task.selectedLoop[task.stageIndex + 1]?.name || "Final Delivery"}</span>
-                            </div>
-                          <div className="col-span-2 mt-1">
-                            <Badge variant="secondary" className="w-full justify-center text-[10px] bg-primary/5 text-primary border-primary/10">
-                              Production Step {task.stageIndex + 1}
-                            </Badge>
-                          </div>
-                      </div>
-                    </CardHeader>
-                    <CardContent className="pt-5 space-y-4">
-                      {currentUser?.role !== 'super-admin' && (
-                        activeAction === `${task._id}-${task.stageIndex}` ? (
-                          <div className="space-y-3 animate-in fade-in zoom-in-95 duration-200">
-                            <label className="text-xs font-bold uppercase text-muted-foreground ml-1">Inward Quantity</label>
-                            <Input 
-                              type="number" 
-                              placeholder="Received Qty"
-                              value={actionData.qty}
-                              onChange={(e) => setActionData({ ...actionData, qty: e.target.value })}
-                              onWheel={(e) => (e.target as HTMLInputElement).blur()}
-                              className="h-11 shadow-sm"
-                              autoFocus
-                            />
-                            <div className="flex gap-2">
-                              <Button className="flex-1 font-bold h-11" onClick={() => handleWorkflowAction(task._id, 'accept')}>
-                                Accept Task
-                              </Button>
-                              <Button variant="ghost" className="h-11" onClick={() => setActiveAction(null)}>Cancel</Button>
-                            </div>
-                          </div>
-                        ) : (
-                          <Button 
-                            className="w-full font-bold h-12 shadow-md group-hover:scale-[1.02] transition-transform" 
-                            onClick={() => {
-                              setActiveAction(`${task._id}-${task.stageIndex}`);
-                              setActionData({ qty: "", rejectionQty: "", notes: "", reason: "", reasons: [""] });
-                            }}
-                          >
-                            Initialize Inward
-                          </Button>
-                        )
-                      )}
-                    </CardContent>
-                  </Card>
-                );
-              })
-              )}
-            </div>
+                            </TableCell>
+                            <TableCell>
+                              <Badge variant="outline" className="font-bold border-primary/20 bg-primary/5 text-primary text-[10px]">
+                                {task.slotLabel}
+                              </Badge>
+                            </TableCell>
+                            <TableCell>
+                              <div className="flex flex-col gap-0.5 max-w-[150px]">
+                                <span className="text-[9px] font-bold text-muted-foreground/60 uppercase leading-none truncate">From: {task.selectedLoop[task.stageIndex - 1]?.name || "Initial Entry"}</span>
+                                <span className="text-[11px] font-bold text-destructive leading-tight truncate">To: {task.selectedLoop[task.stageIndex + 1]?.name || "Final Delivery"}</span>
+                              </div>
+                            </TableCell>
+                            {currentUser?.role === 'super-admin' && (
+                              <TableCell>
+                                <Badge variant="secondary" className="text-[10px] bg-primary/5 text-primary border-primary/10 font-bold">
+                                  Step {task.stageIndex + 1}
+                                </Badge>
+                              </TableCell>
+                            )}
+                            <TableCell className="text-sm font-semibold">
+                              {prevQty !== "-" ? (
+                                <Badge className="bg-blue-100 text-blue-700 border-none font-bold shadow-sm h-6">
+                                  {prevQty}
+                                </Badge>
+                              ) : "-"}
+                            </TableCell>
+                            <TableCell className="pr-6 text-right">
+                              {currentUser?.role !== 'super-admin' && (
+                                <Button 
+                                  size="sm"
+                                  className="font-bold h-9 bg-primary shadow-sm hover:scale-105 transition-transform" 
+                                  onClick={() => {
+                                    setSelectedTask(task);
+                                    setActionData({ qty: prevQty !== "-" ? prevQty.toString() : "", rejectionQty: "", notes: "", reason: "", reasons: [""] });
+                                    setIsInwardDialogOpen(true);
+                                  }}
+                                >
+                                  Initialize Inward
+                                </Button>
+                              )}
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })
+                    )}
+                  </TableBody>
+                </Table>
+              </CardContent>
+            </Card>
           </TabsContent>
 
           <TabsContent value="inprogress" className="animate-in slide-in-from-left-4 duration-300">
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {inProgress.length === 0 ? (
-                <div className="col-span-full h-40 flex items-center justify-center border-2 border-dashed rounded-xl bg-muted/20 text-muted-foreground">
-                  No tasks in progress.
-                </div>
-              ) : (
-                inProgress.map(task => {
-                  const prevQty = task.stageIndex > 0 ? task.stages[task.stageIndex - 1]?.outward?.qty : null;
-                  
-                  return (
-                    <Card key={`${task._id}-${task.stageIndex}`} className="border-none shadow-lg hover:shadow-xl transition-all group">
-                      <CardHeader className="pb-3 border-b bg-orange-50/50">
-                        <div className="flex justify-between items-start">
-                          <div className="flex flex-col">
-                            <CardTitle className="text-xl font-bold font-mono tracking-tight text-orange-950">{task.partNumber}</CardTitle>
-                            <span className="text-xs text-orange-800/70 font-semibold">{task.partName || "Unnamed Part"}</span>
-                          </div>
-                          <div className="flex flex-col items-end gap-1">
-                            <Badge className="bg-orange-200 text-orange-800 border-none text-[10px] font-bold uppercase tracking-tighter shadow-sm h-fit">
-                              Processing
-                            </Badge>
-                            <Badge className="bg-primary text-primary-foreground text-[10px] font-bold h-5 px-1.5 border-none">
-                              {task.slotLabel}
-                            </Badge>
-                          </div>
-                        </div>
-                        <div className="mt-4 grid grid-cols-2 gap-2">
-                           <div className="flex flex-col gap-1 bg-orange-100/50 p-2 rounded border border-orange-200/50 shadow-inner">
-                              <div className="flex justify-between items-center w-full">
-                                <span className="text-[9px] font-bold uppercase text-orange-800/60 leading-none flex items-center gap-1"><ArrowDownCircle className="h-2 w-2" /> Came From</span>
-                                {prevQty !== null && (
-                                  <Badge className="h-4 px-1 text-[8px] bg-blue-100 text-blue-700 border-none font-black shadow-sm">
-                                    Qty: {prevQty}
-                                  </Badge>
-                                )}
+            <Card className="border-none shadow-xl">
+              <CardContent className="p-0 overflow-x-auto">
+                <Table>
+                  <TableHeader className="bg-muted/50">
+                    <TableRow>
+                      <TableHead className="pl-6 font-bold py-4">Part</TableHead>
+                      <TableHead className="font-bold uppercase text-[10px] tracking-wider">Heat No.</TableHead>
+                      <TableHead className="font-bold uppercase text-[10px] tracking-wider">Journey</TableHead>
+                      {currentUser?.role === 'super-admin' && <TableHead className="font-bold">Step</TableHead>}
+                      <TableHead className="font-bold">Inward Qty</TableHead>
+                      <TableHead className="font-bold">Status</TableHead>
+                      <TableHead className="pr-6 text-right font-bold">Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {inProgress.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={currentUser?.role === 'super-admin' ? 7 : 6} className="h-40 text-center text-muted-foreground italic">No tasks in progress.</TableCell>
+                      </TableRow>
+                    ) : (
+                      inProgress.map(task => {
+                        const prevQty = task.stageIndex > 0 ? task.stages[task.stageIndex - 1]?.outward?.qty : null;
+                        
+                        return (
+                          <TableRow key={`${task._id}-${task.stageIndex}`} className="hover:bg-muted/30 group font-medium">
+                            <TableCell className="pl-6 py-4">
+                              <div className="flex flex-col">
+                                <span className="font-bold font-mono text-primary text-sm">{task.partNumber}</span>
+                                <span className="text-[10px] text-muted-foreground font-semibold">{task.partName || "-"}</span>
                               </div>
-                              <span className="text-[11px] font-bold text-orange-900 truncate">{task.selectedLoop[task.stageIndex - 1]?.name || "Initial"}</span>
-                           </div>
-                           <div className="flex flex-col gap-1 bg-orange-100/50 p-2 rounded border border-orange-200/50 shadow-inner">
-                              <span className="text-[9px] font-bold uppercase text-orange-800/60 leading-none flex items-center gap-1"><ArrowUpCircle className="h-2 w-2" /> Goes To</span>
-                              <span className="text-[11px] font-bold text-orange-900 truncate">{task.selectedLoop[task.stageIndex + 1]?.name || "Delivery"}</span>
-                           </div>
-                        </div>
-                      </CardHeader>
-                      <CardContent className="pt-5 space-y-4">
-                        <div className="space-y-2 text-sm border-l-2 border-orange-200 pl-3">
-                          <div className="flex justify-between">
-                            <span className="text-muted-foreground font-medium">Inward Qty:</span>
-                            <span className="font-bold">{task.stage?.inward?.qty}</span>
-                          </div>
-                        </div>
-
-                      {currentUser?.role !== 'super-admin' && (
-                        activeAction === `${task._id}-${task.stageIndex}` ? (
-                          <div className="space-y-3 pt-2">
-                            <div className="space-y-3">
-                              <label className="text-xs font-bold uppercase text-muted-foreground ml-1">Outward Quantity</label>
-                              <Input 
-                                type="number" 
-                                placeholder="Final Qty"
-                                value={actionData.qty}
-                                onChange={(e) => setActionData({ ...actionData, qty: e.target.value })}
-                                onWheel={(e) => (e.target as HTMLInputElement).blur()}
-                                className={cn(
-                                  "h-11",
-                                  Number(actionData.qty) > (task.stage?.inward?.qty || 0) ? "border-destructive" : ""
-                                )}
-                                autoFocus
-                              />
-                            </div>
-
-                            <div className="flex items-center justify-between bg-muted/30 px-3 py-2 rounded-lg border border-muted-foreground/10">
-                               <Label htmlFor="rejections-toggle" className="text-xs font-bold uppercase text-muted-foreground cursor-pointer">
-                                 Include Rejections?
-                               </Label>
-                               <Switch 
-                                 id="rejections-toggle"
-                                 checked={showRejections}
-                                 onCheckedChange={(val) => {
-                                   setShowRejections(val);
-                                   if (!val) setActionData(prev => ({ ...prev, rejectionQty: "", reasons: [""] }));
-                                 }}
-                               />
-                            </div>
-
-                            {showRejections && (
-                              <div className="space-y-3 animate-in fade-in slide-in-from-top-2 duration-300">
-                                <div className="flex justify-between items-end">
-                                  <label className="text-xs font-bold uppercase text-muted-foreground mr-1">Rejection Quantity</label>
-                                  <Badge variant="outline" className="text-primary border-primary/20 bg-primary/5 text-[10px]">
-                                    Balance (In Process): {(task.stage?.inward?.qty || 0) - Number(actionData.qty) - (Number(actionData.rejectionQty) || 0)}
-                                  </Badge>
-                                </div>
-                                <Input 
-                                  type="number"
-                                  placeholder="No. of rejections"
-                                  value={actionData.rejectionQty}
-                                  onChange={(e) => setActionData({ ...actionData, rejectionQty: e.target.value })}
-                                  onWheel={(e) => (e.target as HTMLInputElement).blur()}
-                                  className="h-10 border-orange-200"
-                                />
-
-                                <div className="space-y-2 pt-1">
-                                  <div className="flex items-center justify-between">
-                                    <label className="text-[10px] font-black uppercase text-muted-foreground/70 tracking-widest">Reason Points</label>
-                                    <Button 
-                                      variant="ghost" 
-                                      size="sm" 
-                                      className="h-6 px-2 text-[10px] font-bold text-primary hover:text-primary hover:bg-primary/5 flex items-center gap-1"
-                                      onClick={addReasonPoint}
-                                    >
-                                      <Plus className="h-3 w-3" /> Add Reason
-                                    </Button>
-                                  </div>
-                                  
-                                  <div className="space-y-2 max-h-[150px] overflow-y-auto pr-1 custom-scrollbar">
-                                    {actionData.reasons.map((reason, idx) => (
-                                      <div key={idx} className="flex gap-2 animate-in slide-in-from-left-2 duration-200">
-                                        <div className="relative flex-1">
-                                          <span className="absolute left-3 top-2.5 text-[10px] font-bold text-muted-foreground/40">{idx + 1}</span>
-                                          <Input 
-                                            placeholder={`Reason point ${idx + 1}...`}
-                                            value={reason}
-                                            onChange={(e) => updateReasonPoint(idx, e.target.value)}
-                                            className="h-9 pl-7 text-xs border-muted-foreground/10 focus:border-primary/30 bg-background/50"
-                                          />
-                                        </div>
-                                        {actionData.reasons.length > 1 && (
-                                          <Button 
-                                            variant="ghost" 
-                                            size="icon" 
-                                            className="h-9 w-9 text-muted-foreground hover:text-destructive hover:bg-destructive/5 shrink-0"
-                                            onClick={() => removeReasonPoint(idx)}
-                                          >
-                                            <Trash2 className="h-3.5 w-3.5" />
-                                          </Button>
-                                        )}
-                                      </div>
-                                    ))}
-                                  </div>
-                                </div>
+                            </TableCell>
+                            <TableCell>
+                              <Badge variant="outline" className="font-bold border-primary/20 bg-primary/5 text-primary text-[10px]">
+                                {task.slotLabel}
+                              </Badge>
+                            </TableCell>
+                            <TableCell>
+                              <div className="flex flex-col gap-0.5 max-w-[150px]">
+                                <span className="text-[9px] font-bold text-muted-foreground/60 uppercase leading-none truncate">From: {task.selectedLoop[task.stageIndex - 1]?.name || "Initial"}</span>
+                                <span className="text-[11px] font-bold text-primary leading-tight truncate">To: {task.selectedLoop[task.stageIndex + 1]?.name || "Delivery"}</span>
                               </div>
+                            </TableCell>
+                            {currentUser?.role === 'super-admin' && (
+                              <TableCell>
+                                <Badge variant="secondary" className="text-[10px] bg-primary/5 text-primary border-primary/10 font-bold">
+                                  Step {task.stageIndex + 1}
+                                </Badge>
+                              </TableCell>
                             )}
-
-                            <div className="flex gap-2">
-                              <Button 
-                                className="flex-1 font-bold h-11 bg-green-600 hover:bg-green-700" 
-                                onClick={() => handleWorkflowAction(task._id, 'outward')}
-                                disabled={
-                                  !actionData.qty || 
-                                  (Number(actionData.qty) + (Number(actionData.rejectionQty) || 0)) > (task.stage?.inward?.qty || 0)
-                                }
-                              >
-                                Forward
-                              </Button>
-                              <Button variant="ghost" onClick={() => setActiveAction(null)}>Back</Button>
-                            </div>
-                          </div>
-                        ) : (
-                          <Button className="w-full h-11 bg-green-600 hover:bg-green-700 font-bold" onClick={() => {
-                            setActiveAction(`${task._id}-${task.stageIndex}`);
-                            setActionData({ qty: "", rejectionQty: "", notes: "", reason: "", reasons: [""] });
-                            setShowRejections(false);
-                          }}>
-                            Record Outward
-                          </Button>
-                        )
-                      )}
-                    </CardContent>
-                  </Card>
-                );
-              })
-              )}
-            </div>
+                            <TableCell className="text-sm font-semibold">
+                              {task.stage?.inward?.qty}
+                            </TableCell>
+                            <TableCell>
+                              <Badge className="bg-orange-100 text-orange-700 border-none text-[10px] font-bold uppercase tracking-tighter shadow-sm h-6">
+                                Processing
+                              </Badge>
+                            </TableCell>
+                            <TableCell className="pr-6 text-right">
+                              {currentUser?.role !== 'super-admin' && (
+                                <Button 
+                                  size="sm"
+                                  className="font-bold h-9 bg-green-600 hover:bg-green-700 shadow-sm hover:scale-105 transition-transform" 
+                                  onClick={() => {
+                                    setSelectedTask(task);
+                                    setActionData({ qty: "", rejectionQty: "", notes: "", reason: "", reasons: [""] });
+                                    setShowRejections(false);
+                                    setIsOutwardDialogOpen(true);
+                                  }}
+                                >
+                                  Record Outward
+                                </Button>
+                              )}
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })
+                    )}
+                  </TableBody>
+                </Table>
+              </CardContent>
+            </Card>
           </TabsContent>
 
           <TabsContent value="completed" className="animate-in slide-in-from-left-4 duration-300">
@@ -721,7 +620,7 @@ export default function TaskQueuePage() {
                   <TableHeader className="bg-muted/50">
                     <TableRow>
                       <TableHead className="pl-6 font-bold py-4">Part</TableHead>
-                      <TableHead className="font-bold uppercase text-[10px] tracking-wider">Slot No.</TableHead>
+                      <TableHead className="font-bold uppercase text-[10px] tracking-wider">Heat No.</TableHead>
                       <TableHead className="font-bold uppercase text-[10px] tracking-wider">Journey</TableHead>
                       <TableHead className="font-bold">Prev. Sent</TableHead>
                       <TableHead className="font-bold">Open Stock</TableHead>
@@ -768,7 +667,9 @@ export default function TaskQueuePage() {
                               </TableCell>
                               <TableCell>
                                 <div className="flex flex-col gap-0.5 max-w-[150px]">
-                                  <span className="text-[9px] font-bold text-muted-foreground/60 uppercase leading-none truncate">Step {task.stageIndex + 1}</span>
+                                  {currentUser?.role === 'super-admin' && (
+                                    <span className="text-[9px] font-bold text-muted-foreground/60 uppercase leading-none truncate">Step {task.stageIndex + 1}</span>
+                                  )}
                                   <span className="text-[11px] font-bold text-primary leading-tight truncate">To: {task.selectedLoop[task.stageIndex + 1]?.name || "Delivery"}</span>
                                 </div>
                               </TableCell>
@@ -833,7 +734,7 @@ export default function TaskQueuePage() {
                     <TableHeader className="bg-muted/50">
                       <TableRow>
                         <TableHead className="pl-6 font-bold py-4">Part</TableHead>
-                        <TableHead className="font-bold uppercase text-[10px] tracking-wider">Slot No.</TableHead>
+                        <TableHead className="font-bold uppercase text-[10px] tracking-wider">Heat No.</TableHead>
                         {currentUser?.role === 'super-admin' && (
                           <TableHead className="font-bold uppercase text-[10px] tracking-wider">Journey</TableHead>
                         )}
@@ -938,6 +839,57 @@ export default function TaskQueuePage() {
              </Card>
           </TabsContent>
         </Tabs>
+
+        {/* Initialize Inward Dialog */}
+        <Dialog open={isInwardDialogOpen} onOpenChange={setIsInwardDialogOpen}>
+          <DialogContent 
+            className="max-w-md border-primary/20 shadow-2xl overflow-hidden p-0"
+            onCloseAutoFocus={(e) => {
+              document.body.style.pointerEvents = "";
+            }}
+          >
+            <div className="bg-primary/5 p-6 border-b border-primary/10 flex items-center justify-between">
+               <div>
+                 <DialogTitle className="text-primary flex items-center gap-2">
+                   <ArrowDownCircle className="h-5 w-5 text-blue-600" />
+                   Initialize Inward
+                 </DialogTitle>
+                 <DialogDescription className="mt-1 text-[10px] font-black uppercase text-muted-foreground tracking-widest">
+                   Part: {selectedTask?.partNumber}
+                 </DialogDescription>
+               </div>
+               <Badge className="bg-blue-100 text-blue-700 font-bold border-none h-fit">
+                  Expected: {selectedTask?.stageIndex > 0 ? selectedTask?.stages[selectedTask.stageIndex - 1]?.outward?.qty : "-"}
+               </Badge>
+            </div>
+
+            <div className="p-6 space-y-5">
+              <div className="space-y-2">
+                 <label className="text-[10px] font-black uppercase text-muted-foreground ml-1">Inward Quantity</label>
+                 <Input 
+                   type="number"
+                   placeholder="Enter Qty"
+                   value={actionData.qty}
+                   onChange={(e) => setActionData({ ...actionData, qty: e.target.value })}
+                   onWheel={(e) => (e.target as HTMLInputElement).blur()}
+                   className="h-12 text-lg font-bold bg-background/50 focus:border-primary/30"
+                   autoFocus
+                 />
+              </div>
+            </div>
+
+            <DialogFooter className="p-6 bg-muted/20 border-t border-primary/5 sm:justify-end gap-2">
+               <Button variant="ghost" onClick={() => setIsInwardDialogOpen(false)} className="font-bold">Cancel</Button>
+               <Button 
+                 className="bg-primary hover:bg-primary/90 font-bold px-8"
+                 disabled={loading || !actionData.qty || Number(actionData.qty) <= 0}
+                 onClick={() => handleWorkflowAction(selectedTask?._id, 'accept')}
+               >
+                 Accept Task
+               </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
 
         {/* Reasons Dialog */}
         <Dialog open={isReasonsDialogOpen} onOpenChange={setIsReasonsDialogOpen}>
