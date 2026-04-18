@@ -20,6 +20,14 @@ const masterTableRowSchema = mongoose.Schema(
       type: String,
       trim: true,
     },
+    heatNo: {
+      type: String,
+      trim: true,
+    },
+    isBlueprint: {
+      type: Boolean,
+      default: false,
+    },
     selectedLoop: [
       {
         type: mongoose.Schema.Types.ObjectId,

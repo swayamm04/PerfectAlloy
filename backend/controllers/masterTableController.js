@@ -75,13 +75,30 @@ const deleteMasterTable = async (req, res) => {
 // @route   POST /api/master-tables/:id/rows
 // @access  Private/Admin
 const createMasterTableRow = async (req, res) => {
-  const { partName, partNumber, material, selectedLoop } = req.body;
+  const { partName, partNumber, material, heatNo, selectedLoop, isBlueprint } = req.body;
 
   try {
+    // Check for duplicate Heat No for the same Part Number (only for active rows)
+    if (!isBlueprint && heatNo) {
+      const existing = await MasterTableRow.findOne({
+        partNumber,
+        heatNo: heatNo.trim(),
+        isBlueprint: false
+      });
+      if (existing) {
+        return res.status(400).json({ 
+          message: `Heat No. ${heatNo} already exists for Part ${partNumber}. Each batch must have a unique Heat No.` 
+        });
+      }
+    }
+
     const row = await MasterTableRow.create({
       tableId: req.params.id,
       partName,
       partNumber,
+      material,
+      heatNo,
+      isBlueprint: isBlueprint || false,
       selectedLoop: selectedLoop || [],
       stages: selectedLoop ? selectedLoop.map(() => ({})) : [],
     });
@@ -89,9 +106,13 @@ const createMasterTableRow = async (req, res) => {
     // Notify the first department in the loop
     if (selectedLoop && selectedLoop.length > 0) {
       const firstDeptId = selectedLoop[0];
+      const message = isBlueprint 
+        ? `New part definition ${partNumber} (${partName || 'Unknown'}) is ready for production. Please initialize manual inward.`
+        : `New part ${partNumber} (${partName || 'Unknown'}) created. Please initialize data.`;
+
       await Notification.create({
         departmentId: firstDeptId,
-        message: `New part ${partNumber} created for ${row.partName || 'Unknown'}. Please initialize data.`,
+        message,
         type: 'task_assigned',
         link: `/task-queue`,
       });
@@ -99,7 +120,8 @@ const createMasterTableRow = async (req, res) => {
 
     res.status(201).json(row);
   } catch (error) {
-    res.status(500).json({ message: 'Server Error' });
+    console.error('Error in createMasterTableRow:', error);
+    res.status(500).json({ message: error.message || 'Server Error' });
   }
 };
 
@@ -107,15 +129,36 @@ const createMasterTableRow = async (req, res) => {
 // @route   PUT /api/master-tables/rows/:rowId
 // @access  Private/Admin
 const updateMasterTableRow = async (req, res) => {
-  const { partName, partNumber, material, selectedLoop, statusValues } = req.body;
+  const { partName, partNumber, material, heatNo, selectedLoop, statusValues, isBlueprint } = req.body;
 
   try {
     const row = await MasterTableRow.findById(req.params.rowId);
 
     if (row) {
+      // Check for duplicate Heat No if it's being updated
+      const newPartNumber = partNumber || row.partNumber;
+      const newHeatNo = heatNo !== undefined ? heatNo : row.heatNo;
+      const newIsBlueprint = isBlueprint !== undefined ? isBlueprint : row.isBlueprint;
+
+      if (!newIsBlueprint && newHeatNo) {
+        const existing = await MasterTableRow.findOne({
+          partNumber: newPartNumber,
+          heatNo: newHeatNo.trim(),
+          isBlueprint: false,
+          _id: { $ne: req.params.rowId }
+        });
+        if (existing) {
+          return res.status(400).json({ 
+            message: `Heat No. ${newHeatNo} already exists for Part ${newPartNumber}.` 
+          });
+        }
+      }
+
       row.partName = partName !== undefined ? partName : row.partName;
       row.partNumber = partNumber || row.partNumber;
       row.material = material !== undefined ? material : row.material;
+      row.heatNo = heatNo !== undefined ? heatNo : row.heatNo;
+      row.isBlueprint = isBlueprint !== undefined ? isBlueprint : row.isBlueprint;
       if (selectedLoop) {
         row.selectedLoop = selectedLoop;
 

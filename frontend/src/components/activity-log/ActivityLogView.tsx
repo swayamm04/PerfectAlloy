@@ -179,7 +179,7 @@ export default function ActivityLogView() {
     const link = document.createElement("a");
     const url = URL.createObjectURL(blob);
     link.setAttribute("href", url);
-    link.setAttribute("download", `activity_log_${format(new Date(), 'ddMMyyyy')}.csv`);
+    link.setAttribute("download", `activity_log_${format(new Date(), 'dd-MM-yyyy')}.csv`);
     link.style.visibility = 'hidden';
     document.body.appendChild(link);
     link.click();
@@ -199,11 +199,11 @@ export default function ActivityLogView() {
     doc.text("Activity Log Report", 14, 22);
     doc.setFontSize(11);
     doc.setTextColor(100);
-    doc.text(`Generated on: ${format(new Date(), 'dd MMM yyyy hh:mm a')}`, 14, 30);
+    doc.text(`Generated on: ${format(new Date(), 'dd/MM/yyyy hh:mm a')}`, 14, 30);
     
     const tableColumn = ["Date", "Time", "User", "Action", "Resource"];
     const tableRows = activities.map(log => [
-      format(new Date(log.timestamp), 'dd MMM yyyy'),
+      format(new Date(log.timestamp), 'dd/MM/yyyy'),
       format(new Date(log.timestamp), 'hh:mm:ss a'),
       log.user?.name || "Unknown",
       log.action,
@@ -219,7 +219,7 @@ export default function ActivityLogView() {
       styles: { fontSize: 9 }
     });
 
-    doc.save(`activity_log_${format(new Date(), 'ddMMyyyy')}.pdf`);
+    doc.save(`activity_log_${format(new Date(), 'dd-MM-yyyy')}.pdf`);
     toast.success("PDF Exported successfully");
   };
 
@@ -376,7 +376,7 @@ export default function ActivityLogView() {
                         <TableRow key={log._id} className="hover:bg-muted/30 transition-colors group">
                           <TableCell className="whitespace-nowrap">
                             <div className="flex flex-col">
-                              <span className="font-medium">{format(new Date(log.timestamp), 'dd MMM yyyy')}</span>
+                              <span className="font-medium">{format(new Date(log.timestamp), 'dd/MM/yyyy')}</span>
                               <span className="text-xs text-muted-foreground flex items-center gap-1">
                                 <Clock className="h-3 w-3" />
                                 {format(new Date(log.timestamp), 'hh:mm:ss a')}

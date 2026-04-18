@@ -21,9 +21,9 @@ const reportCategories = [
     icon: DollarSign,
     description: "Revenue, transactions, and sales performance",
     reports: [
-      { name: "Monthly Sales Summary", lastGenerated: "2024-01-28" },
-      { name: "Sales by Product Category", lastGenerated: "2024-01-27" },
-      { name: "Sales by Region", lastGenerated: "2024-01-25" },
+      { name: "Monthly Sales Summary", lastGenerated: "28/01/2024" },
+      { name: "Sales by Product Category", lastGenerated: "27/01/2024" },
+      { name: "Sales by Region", lastGenerated: "25/01/2024" },
     ],
   },
   {
@@ -33,7 +33,7 @@ const reportCategories = [
     reports: [
       { name: "Current Stock Levels", lastGenerated: "2024-01-28" },
       { name: "Low Stock Alert", lastGenerated: "2024-01-28" },
-      { name: "Inventory Valuation", lastGenerated: "2024-01-20" },
+      { name: "Inventory Valuation", lastGenerated: "20/01/2024" },
     ],
   },
   {
@@ -43,7 +43,7 @@ const reportCategories = [
     reports: [
       { name: "Order Fulfillment Rate", lastGenerated: "2024-01-28" },
       { name: "Pending Orders Summary", lastGenerated: "2024-01-28" },
-      { name: "Order History", lastGenerated: "2024-01-26" },
+      { name: "Order History", lastGenerated: "26/01/2024" },
     ],
   },
   {
@@ -51,9 +51,9 @@ const reportCategories = [
     icon: Truck,
     description: "Supplier performance and procurement",
     reports: [
-      { name: "Supplier Performance", lastGenerated: "2024-01-22" },
+      { name: "Supplier Performance", lastGenerated: "22/01/2024" },
       { name: "Purchase Order Summary", lastGenerated: "2024-01-28" },
-      { name: "Supplier Payment History", lastGenerated: "2024-01-15" },
+      { name: "Supplier Payment History", lastGenerated: "15/01/2024" },
     ],
   },
   {

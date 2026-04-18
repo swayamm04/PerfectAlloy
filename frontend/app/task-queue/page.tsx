@@ -8,11 +8,11 @@ import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { toast } from "sonner";
-import { 
-  ClipboardList, 
-  Loader2, 
-  ArrowDownCircle, 
-  ArrowUpCircle, 
+import {
+  ClipboardList,
+  Loader2,
+  ArrowDownCircle,
+  ArrowUpCircle,
   Search,
   Plus,
   Trash2,
@@ -24,30 +24,30 @@ import {
 import { API_URL } from "@/src/lib/api";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { 
-  Select, 
-  SelectContent, 
-  SelectItem, 
-  SelectTrigger, 
-  SelectValue 
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
-import { 
-  DropdownMenu, 
-  DropdownMenuContent, 
-  DropdownMenuItem, 
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
   DropdownMenuTrigger,
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuPortal
 } from "@/src/components/ui/dropdown-menu";
-import { 
-  Dialog, 
-  DialogContent, 
-  DialogHeader, 
-  DialogTitle, 
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
   DialogFooter,
   DialogDescription
 } from "@/src/components/ui/dialog";
@@ -57,6 +57,8 @@ interface Row {
   partName: string;
   partNumber: string;
   material: string;
+  heatNo: string;
+  isBlueprint?: boolean;
   currentDepartmentIndex: number;
   selectedLoop: any[];
   stages: any[];
@@ -80,24 +82,26 @@ export default function TaskQueuePage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [activeAction, setActiveAction] = useState<string | null>(null);
   const [showRejections, setShowRejections] = useState(false);
-  const [actionData, setActionData] = useState({ 
-    qty: "", 
-    rejectionQty: "", 
-    notes: "", 
+  const [actionData, setActionData] = useState({
+    qty: "",
+    rejectionQty: "",
+    notes: "",
     reason: "",
-    reasons: [""] 
+    reasons: [""]
   });
 
   const [isInwardDialogOpen, setIsInwardDialogOpen] = useState(false);
   const [isOutwardDialogOpen, setIsOutwardDialogOpen] = useState(false);
   const [isReasonsDialogOpen, setIsReasonsDialogOpen] = useState(false);
   const [isNewTaskDialogOpen, setIsNewTaskDialogOpen] = useState(false);
-  
+
   const [selectedTask, setSelectedTask] = useState<any>(null);
   const [candidateBlueprints, setCandidateBlueprints] = useState<any[]>([]);
   const [selectedBlueprintId, setSelectedBlueprintId] = useState("");
   const [newInwardQty, setNewInwardQty] = useState("");
+  const [newHeatNo, setNewHeatNo] = useState("");
   const [isInitializing, setIsInitializing] = useState(false);
+  const [canInitialize, setCanInitialize] = useState(false);
 
   const fetchTasks = async () => {
     if (!currentUser) return;
@@ -145,69 +149,46 @@ export default function TaskQueuePage() {
     }
   };
 
-  const fetchBlueprints = async () => {
-    if (!currentUser) return;
-    try {
-      // 1. Fetch all tables
-      const tRes = await fetch(`${API_URL}/api/master-tables`, {
-        headers: { Authorization: `Bearer ${currentUser.token}` }
-      });
-      const tables = await tRes.json();
-      if (!tRes.ok) return;
-
-      const myDeptId = typeof currentUser.department === 'string' 
-        ? currentUser.department 
-        : (currentUser.department as any)?._id;
+  // No longer need manual fetchBlueprints as blueprints are included in fetchTasks response
+  useEffect(() => {
+    if (tasks.length > 0) {
+      const myDeptId = selectedDeptId || (typeof currentUser?.department === 'string'
+        ? currentUser.department
+        : (currentUser?.department as any)?._id);
 
       if (!myDeptId) return;
 
-      // 2. We want to find blueprints where this department is at index 0
-      // We can fetch details for ALL tables or skip if they don't have us in departments
-      const blueprints: any[] = [];
-      
-      const tablePromises = tables.map(async (table: any) => {
-        // Only fetch if our dept is in the table's department list (optimization)
-        const hasDept = table.departments?.some((d: any) => (d._id || d) === myDeptId);
-        if (!hasDept) return;
+      const blueprints = tasks.filter(t => {
+        if (!t.isBlueprint) return false;
+        const loop = t.selectedLoop || [];
+        const firstDeptId = loop[0]?._id || loop[0];
+        return firstDeptId?.toString() === myDeptId.toString();
+      }).map(t => ({
+        ...t,
+        tableId: t.tableId?._id || t.tableId,
+        tableName: t.tableId?.name || "Unknown Table"
+      }));
 
-        const rRes = await fetch(`${API_URL}/api/master-tables/${table._id}`, {
-          headers: { Authorization: `Bearer ${currentUser.token}` }
-        });
-        const tableDetail = await rRes.json();
-        
-        if (rRes.ok && tableDetail.rows) {
-          // Filter rows where our dept is at loop index 0
-          tableDetail.rows.forEach((row: any) => {
-            const loop = row.selectedLoop || [];
-            const firstDeptId = loop[0]?._id || loop[0];
-            if (firstDeptId === myDeptId) {
-              // Add as a blueprint candidate if not already seen (unique by part number/name/loop)
-              const exists = blueprints.find(b => b.partNumber === row.partNumber && b.tableId === table._id);
-              if (!exists) {
-                blueprints.push({
-                  ...row,
-                  tableId: table._id,
-                  tableName: table.name
-                });
-              }
-            }
-          });
-        }
-      });
-
-      await Promise.all(tablePromises);
       setCandidateBlueprints(blueprints);
-    } catch (error) {
-      console.error("Error fetching blueprints:", error);
+      setCanInitialize(blueprints.length > 0);
+    } else {
+      setCandidateBlueprints([]);
+      setCanInitialize(false);
     }
-  };
+  }, [tasks, selectedDeptId, currentUser]);
 
   useEffect(() => {
     if (currentUser) {
       fetchDepartments();
-      fetchBlueprints();
     }
   }, [currentUser]);
+
+  // Blueprints are now synchronized with tasks
+  // useEffect(() => {
+  //   if (currentUser) {
+  //     fetchBlueprints();
+  //   }
+  // }, [currentUser, selectedDeptId]);
 
   useEffect(() => {
     if (currentUser && (selectedDeptId || currentUser.role !== 'super-admin')) {
@@ -230,8 +211,8 @@ export default function TaskQueuePage() {
 
   const removeReasonPoint = (index: number) => {
     if (actionData.reasons.length <= 1) {
-       setActionData(prev => ({ ...prev, reasons: [""] }));
-       return;
+      setActionData(prev => ({ ...prev, reasons: [""] }));
+      return;
     }
     const newReasons = actionData.reasons.filter((_, i) => i !== index);
     setActionData(prev => ({ ...prev, reasons: newReasons }));
@@ -243,23 +224,23 @@ export default function TaskQueuePage() {
     try {
       const endpoint = `${API_URL}/api/workflow/${action}/${taskId}`;
       const method = action === 'process' ? 'PUT' : 'POST';
-      
+
       let payload: any = {};
-      
+
       if (action === 'accept') {
         payload = { qty: Number(actionData.qty), source: 'External' };
       } else if (action === 'process') {
-        payload = { status: actionData.qty || 'Processing', notes: actionData.notes }; 
+        payload = { status: actionData.qty || 'Processing', notes: actionData.notes };
       } else if (action === 'outward') {
         const finalReason = actionData.reasons
           .filter(r => r.trim() !== "")
           .map(r => `• ${r}`)
           .join('\n');
-          
-        payload = { 
-          qty: Number(actionData.qty), 
-          rejectionQty: Number(actionData.rejectionQty) || 0, 
-          reason: finalReason 
+
+        payload = {
+          qty: Number(actionData.qty),
+          rejectionQty: Number(actionData.rejectionQty) || 0,
+          reason: finalReason
         };
       }
 
@@ -296,11 +277,11 @@ export default function TaskQueuePage() {
   const allStageTasks = tasks.flatMap(task => {
     const deptId = getDeptId();
     if (!deptId || !task.selectedLoop) return [];
-    
+
     return task.stages.map((stage, index) => {
       const loopStage = task.selectedLoop[index];
       const loopDeptId = typeof loopStage === 'object' ? loopStage._id : loopStage;
-      
+
       const visitNumber = task.selectedLoop.slice(0, index).filter(id => {
         const idStr = typeof id === 'object' ? id._id : id;
         return idStr?.toString() === loopDeptId?.toString();
@@ -308,7 +289,7 @@ export default function TaskQueuePage() {
 
       const date = new Date(task.createdAt || new Date());
       const ddmm = `${date.getDate().toString().padStart(2, '0')}${(date.getMonth() + 1).toString().padStart(2, '0')}`;
-      const heatLabel = `H-${ddmm}-${visitNumber}`;
+      const heatLabel = task.heatNo || `H-${ddmm}-${visitNumber}`;
 
       return {
         ...task,
@@ -324,14 +305,14 @@ export default function TaskQueuePage() {
     });
   });
 
-  const filteredTasks = allStageTasks.filter(t => 
+  const filteredTasks = allStageTasks.filter(t =>
     t.partNumber.toLowerCase().includes(searchQuery.toLowerCase()) ||
     t.tableId?.name.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  const incoming = filteredTasks.filter(t => t.isCurrentStage && !t.stage.inward?.receivedAt);
-  const inProgress = filteredTasks.filter(t => t.isCurrentStage && t.stage.inward?.receivedAt && !t.stage.outward?.isCompleted);
-  const outwarded = filteredTasks.filter(t => t.stage.outward?.isCompleted);
+  const incoming = filteredTasks.filter(t => t.isCurrentStage && !t.stage.inward?.receivedAt && !t.isBlueprint);
+  const inProgress = filteredTasks.filter(t => t.isCurrentStage && t.stage.inward?.receivedAt && !t.stage.outward?.isCompleted && !t.isBlueprint);
+  const outwarded = filteredTasks.filter(t => t.stage.outward?.isCompleted && !t.isBlueprint);
 
   const inProcessRows = filteredTasks.filter(t => {
     if (!t.stage.inward?.receivedAt) return false;
@@ -352,8 +333,8 @@ export default function TaskQueuePage() {
               Task Queue
             </h1>
             <p className="text-muted-foreground text-sm">
-              {currentUser?.role === 'super-admin' 
-                ? "Oversee production workflow across all departments" 
+              {currentUser?.role === 'super-admin'
+                ? "Oversee production workflow across all departments"
                 : "Manage production workflow tasks for your department"}
             </p>
           </div>
@@ -379,15 +360,15 @@ export default function TaskQueuePage() {
             <div className="flex items-center gap-2">
               <div className="flex items-center bg-background rounded-lg border border-primary/10 px-3 h-11">
                 <Clock className="h-4 w-4 text-muted-foreground mr-2" />
-                <input 
-                  type="date" 
+                <input
+                  type="date"
                   className="bg-transparent border-none text-sm outline-none"
                   value={startDate}
                   onChange={(e) => setStartDate(e.target.value)}
                 />
                 <span className="mx-2 text-muted-foreground">to</span>
-                <input 
-                  type="date" 
+                <input
+                  type="date"
                   className="bg-transparent border-none text-sm outline-none"
                   value={endDate}
                   onChange={(e) => setEndDate(e.target.value)}
@@ -397,8 +378,8 @@ export default function TaskQueuePage() {
 
             <div className="relative w-full sm:w-64">
               <Search className="absolute left-3 top-3.5 h-4 w-4 text-muted-foreground" />
-              <Input 
-                placeholder="Search part or table..." 
+              <Input
+                placeholder="Search part or table..."
                 className="pl-10 h-11 bg-background border-primary/10"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
@@ -437,18 +418,19 @@ export default function TaskQueuePage() {
                 <ArrowDownCircle className="h-4 w-4 text-blue-500" />
                 Available for Inward
               </h3>
-              {candidateBlueprints.length > 0 && (
-                <Button 
-                  size="sm" 
-                  className="gap-2 bg-blue-600 hover:bg-blue-700 font-bold h-9 shadow-md transition-all active:scale-95" 
+              {canInitialize && (
+                <Button
+                  size="sm"
+                  className="gap-2 bg-blue-600 hover:bg-blue-700 font-bold h-9 shadow-md transition-all active:scale-95"
                   onClick={() => setIsNewTaskDialogOpen(true)}
+                  disabled={currentUser?.role === 'super-admin'}
                 >
                   <Plus className="h-4 w-4" />
                   New Manual Inward
                 </Button>
               )}
             </div>
-            
+
             <Card className="border-none shadow-xl">
               <CardContent className="p-0 overflow-x-auto">
                 <Table>
@@ -470,7 +452,7 @@ export default function TaskQueuePage() {
                     ) : (
                       incoming.map(task => {
                         const prevQty = task.stageIndex > 0 ? task.stages[task.stageIndex - 1]?.outward?.qty : "-";
-                        
+
                         return (
                           <TableRow key={`${task._id}-${task.stageIndex}`} className="hover:bg-muted/30 group font-medium">
                             <TableCell className="pl-6 py-4">
@@ -505,19 +487,18 @@ export default function TaskQueuePage() {
                               ) : "-"}
                             </TableCell>
                             <TableCell className="pr-6 text-right">
-                              {currentUser?.role !== 'super-admin' && (
-                                <Button 
-                                  size="sm"
-                                  className="font-bold h-9 bg-primary shadow-sm hover:scale-105 transition-transform" 
-                                  onClick={() => {
-                                    setSelectedTask(task);
-                                    setActionData({ qty: prevQty !== "-" ? prevQty.toString() : "", rejectionQty: "", notes: "", reason: "", reasons: [""] });
-                                    setIsInwardDialogOpen(true);
-                                  }}
-                                >
-                                  Initialize Inward
-                                </Button>
-                              )}
+                              <Button
+                                size="sm"
+                                className="font-bold h-9 bg-primary hover:bg-primary/90 shadow-sm hover:scale-105 transition-transform"
+                                disabled={currentUser?.role === 'super-admin'}
+                                onClick={() => {
+                                  setSelectedTask(task);
+                                  setActionData({ qty: prevQty !== "-" ? prevQty.toString() : "", rejectionQty: "", notes: "", reason: "", reasons: [""] });
+                                  setIsInwardDialogOpen(true);
+                                }}
+                              >
+                                Accept Inward
+                              </Button>
                             </TableCell>
                           </TableRow>
                         );
@@ -540,19 +521,18 @@ export default function TaskQueuePage() {
                       <TableHead className="font-bold uppercase text-[10px] tracking-wider">Journey</TableHead>
                       {currentUser?.role === 'super-admin' && <TableHead className="font-bold">Step</TableHead>}
                       <TableHead className="font-bold">Inward Qty</TableHead>
-                      <TableHead className="font-bold">Status</TableHead>
                       <TableHead className="pr-6 text-right font-bold">Actions</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {inProgress.length === 0 ? (
                       <TableRow>
-                        <TableCell colSpan={currentUser?.role === 'super-admin' ? 7 : 6} className="h-40 text-center text-muted-foreground italic">No tasks in progress.</TableCell>
+                        <TableCell colSpan={currentUser?.role === 'super-admin' ? 6 : 5} className="h-40 text-center text-muted-foreground italic">No tasks in progress.</TableCell>
                       </TableRow>
                     ) : (
                       inProgress.map(task => {
                         const prevQty = task.stageIndex > 0 ? task.stages[task.stageIndex - 1]?.outward?.qty : null;
-                        
+
                         return (
                           <TableRow key={`${task._id}-${task.stageIndex}`} className="hover:bg-muted/30 group font-medium">
                             <TableCell className="pl-6 py-4">
@@ -582,26 +562,20 @@ export default function TaskQueuePage() {
                             <TableCell className="text-sm font-semibold">
                               {task.stage?.inward?.qty}
                             </TableCell>
-                            <TableCell>
-                              <Badge className="bg-orange-100 text-orange-700 border-none text-[10px] font-bold uppercase tracking-tighter shadow-sm h-6">
-                                Processing
-                              </Badge>
-                            </TableCell>
                             <TableCell className="pr-6 text-right">
-                              {currentUser?.role !== 'super-admin' && (
-                                <Button 
-                                  size="sm"
-                                  className="font-bold h-9 bg-green-600 hover:bg-green-700 shadow-sm hover:scale-105 transition-transform" 
-                                  onClick={() => {
-                                    setSelectedTask(task);
-                                    setActionData({ qty: "", rejectionQty: "", notes: "", reason: "", reasons: [""] });
-                                    setShowRejections(false);
-                                    setIsOutwardDialogOpen(true);
-                                  }}
-                                >
-                                  Record Outward
-                                </Button>
-                              )}
+                              <Button
+                                size="sm"
+                                className="font-bold h-9 bg-green-600 hover:bg-green-700 shadow-sm hover:scale-105 transition-transform"
+                                disabled={currentUser?.role === 'super-admin'}
+                                onClick={() => {
+                                  setSelectedTask(task);
+                                  setActionData({ qty: "", rejectionQty: "", notes: "", reason: "", reasons: [""] });
+                                  setShowRejections(false);
+                                  setIsOutwardDialogOpen(true);
+                                }}
+                              >
+                                Record Outward
+                              </Button>
                             </TableCell>
                           </TableRow>
                         );
@@ -652,248 +626,248 @@ export default function TaskQueuePage() {
                         const cumOutward = currentStages.reduce((sum, s) => sum + (s.outward?.qty || 0), 0);
                         const prevSent = task.stageIndex > 0 ? task.stages[task.stageIndex - 1]?.outward?.qty : "-";
 
-                          return (
-                            <TableRow key={`${task._id}-${task.stageIndex}`} className="hover:bg-muted/30">
-                              <TableCell className="pl-6 py-4">
-                                <div className="flex flex-col">
-                                  <span className="font-bold font-mono text-primary text-sm">{task.partNumber}</span>
-                                  <span className="text-[10px] text-muted-foreground font-semibold">{task.partName || "-"}</span>
-                                </div>
-                              </TableCell>
-                              <TableCell>
-                                <Badge variant="outline" className="font-bold border-primary/20 bg-primary/5 text-primary text-[10px]">
-                                  {task.slotLabel}
-                                </Badge>
-                              </TableCell>
-                              <TableCell>
-                                <div className="flex flex-col gap-0.5 max-w-[150px]">
-                                  {currentUser?.role === 'super-admin' && (
-                                    <span className="text-[9px] font-bold text-muted-foreground/60 uppercase leading-none truncate">Step {task.stageIndex + 1}</span>
-                                  )}
-                                  <span className="text-[11px] font-bold text-primary leading-tight truncate">To: {task.selectedLoop[task.stageIndex + 1]?.name || "Delivery"}</span>
-                                </div>
-                              </TableCell>
-                              <TableCell className="font-medium text-muted-foreground text-sm">{prevSent}</TableCell>
-                              <TableCell className="font-medium text-muted-foreground text-sm">{openStock}</TableCell>
-                              <TableCell className="text-sm font-semibold">{task.stage?.inward?.qty}</TableCell>
-                              <TableCell className="font-bold text-blue-600/80 text-sm">{cumInward}</TableCell>
-                              <TableCell className="text-sm font-semibold">{task.stage?.outward?.qty}</TableCell>
-                              <TableCell className="font-bold text-green-600/80 text-sm">{cumOutward}</TableCell>
-                              <TableCell className={cn(
-                                "font-black text-sm",
-                                balance > 0 ? "text-orange-600" : "text-primary"
-                              )}>
-                                {balance}
-                              </TableCell>
-                              <TableCell className="text-muted-foreground text-[10px]">
-                                {task.stage?.outward?.sentAt && new Date(task.stage.outward.sentAt).toLocaleString()}
-                              </TableCell>
-                              <TableCell className="text-right">
-                                <Badge className="bg-green-100 text-green-700 border-none text-[10px] font-bold">FORWARDED</Badge>
-                              </TableCell>
-                              <TableCell className="pr-6 text-right">
-                                <DropdownMenu>
-                                  <DropdownMenuTrigger asChild>
-                                    <Button variant="ghost" size="icon" type="button" className="h-8 w-8 opacity-50 hover:opacity-100 transition-opacity">
-                                      <MoreHorizontal className="h-4 w-4" />
-                                    </Button>
-                                  </DropdownMenuTrigger>
-                                  <DropdownMenuPortal>
-                                    <DropdownMenuContent align="end" className="w-40 border-primary/10 shadow-lg">
-                                      <DropdownMenuLabel className="text-[10px] font-bold uppercase text-muted-foreground/50">Actions</DropdownMenuLabel>
-                                      <DropdownMenuSeparator />
-                                      <DropdownMenuItem 
-                                        className="text-xs font-bold gap-2 cursor-pointer"
-                                        onSelect={(e) => {
-                                          e.preventDefault();
-                                          setSelectedTask(task);
-                                          setIsReasonsDialogOpen(true);
-                                        }}
-                                      >
-                                        <Eye className="h-3.5 w-3.5 text-primary/70" />
-                                        View Reasons
-                                      </DropdownMenuItem>
-                                    </DropdownMenuContent>
-                                  </DropdownMenuPortal>
-                                </DropdownMenu>
-                              </TableCell>
-                            </TableRow>
-                          );
-                        })
-                      )}
-                    </TableBody>
-                  </Table>
-               </CardContent>
-             </Card>
+                        return (
+                          <TableRow key={`${task._id}-${task.stageIndex}`} className="hover:bg-muted/30">
+                            <TableCell className="pl-6 py-4">
+                              <div className="flex flex-col">
+                                <span className="font-bold font-mono text-primary text-sm">{task.partNumber}</span>
+                                <span className="text-[10px] text-muted-foreground font-semibold">{task.partName || "-"}</span>
+                              </div>
+                            </TableCell>
+                            <TableCell>
+                              <Badge variant="outline" className="font-bold border-primary/20 bg-primary/5 text-primary text-[10px]">
+                                {task.slotLabel}
+                              </Badge>
+                            </TableCell>
+                            <TableCell>
+                              <div className="flex flex-col gap-0.5 max-w-[150px]">
+                                {currentUser?.role === 'super-admin' && (
+                                  <span className="text-[9px] font-bold text-muted-foreground/60 uppercase leading-none truncate">Step {task.stageIndex + 1}</span>
+                                )}
+                                <span className="text-[11px] font-bold text-primary leading-tight truncate">To: {task.selectedLoop[task.stageIndex + 1]?.name || "Delivery"}</span>
+                              </div>
+                            </TableCell>
+                            <TableCell className="font-medium text-muted-foreground text-sm">{prevSent}</TableCell>
+                            <TableCell className="font-medium text-muted-foreground text-sm">{openStock}</TableCell>
+                            <TableCell className="text-sm font-semibold">{task.stage?.inward?.qty}</TableCell>
+                            <TableCell className="font-bold text-blue-600/80 text-sm">{cumInward}</TableCell>
+                            <TableCell className="text-sm font-semibold">{task.stage?.outward?.qty}</TableCell>
+                            <TableCell className="font-bold text-green-600/80 text-sm">{cumOutward}</TableCell>
+                            <TableCell className={cn(
+                              "font-black text-sm",
+                              balance > 0 ? "text-orange-600" : "text-primary"
+                            )}>
+                              {balance}
+                            </TableCell>
+                            <TableCell className="text-muted-foreground text-[10px]">
+                              {task.stage?.outward?.sentAt && new Date(task.stage.outward.sentAt).toLocaleDateString('en-GB')}
+                            </TableCell>
+                            <TableCell className="text-right">
+                              <Badge className="bg-green-100 text-green-700 border-none text-[10px] font-bold">FORWARDED</Badge>
+                            </TableCell>
+                            <TableCell className="pr-6 text-right">
+                              <DropdownMenu>
+                                <DropdownMenuTrigger asChild>
+                                  <Button variant="ghost" size="icon" type="button" className="h-8 w-8 opacity-50 hover:opacity-100 transition-opacity">
+                                    <MoreHorizontal className="h-4 w-4" />
+                                  </Button>
+                                </DropdownMenuTrigger>
+                                <DropdownMenuPortal>
+                                  <DropdownMenuContent align="end" className="w-40 border-primary/10 shadow-lg">
+                                    <DropdownMenuLabel className="text-[10px] font-bold uppercase text-muted-foreground/50">Actions</DropdownMenuLabel>
+                                    <DropdownMenuSeparator />
+                                    <DropdownMenuItem
+                                      className="text-xs font-bold gap-2 cursor-pointer"
+                                      onSelect={(e) => {
+                                        e.preventDefault();
+                                        setSelectedTask(task);
+                                        setIsReasonsDialogOpen(true);
+                                      }}
+                                    >
+                                      <Eye className="h-3.5 w-3.5 text-primary/70" />
+                                      View Reasons
+                                    </DropdownMenuItem>
+                                  </DropdownMenuContent>
+                                </DropdownMenuPortal>
+                              </DropdownMenu>
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })
+                    )}
+                  </TableBody>
+                </Table>
+              </CardContent>
+            </Card>
           </TabsContent>
 
           <TabsContent value="inprocess-table" className="animate-in slide-in-from-left-4 duration-300">
-             <Card className="border-none shadow-xl">
-               <CardContent className="p-0 overflow-x-auto">
-                  <Table>
-                    <TableHeader className="bg-muted/50">
+            <Card className="border-none shadow-xl">
+              <CardContent className="p-0 overflow-x-auto">
+                <Table>
+                  <TableHeader className="bg-muted/50">
+                    <TableRow>
+                      <TableHead className="pl-6 font-bold py-4">Part</TableHead>
+                      <TableHead className="font-bold uppercase text-[10px] tracking-wider">Heat No.</TableHead>
+                      {currentUser?.role === 'super-admin' && (
+                        <TableHead className="font-bold uppercase text-[10px] tracking-wider">Journey</TableHead>
+                      )}
+                      <TableHead className="font-bold">Inward</TableHead>
+                      <TableHead className="font-bold">Outward</TableHead>
+                      <TableHead className="font-bold">Rejections</TableHead>
+                      <TableHead className="font-bold">Date</TableHead>
+                      <TableHead className="text-right font-bold">Balance</TableHead>
+                      <TableHead className="pr-6 text-right font-bold">Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {inProcessRows.length === 0 ? (
                       <TableRow>
-                        <TableHead className="pl-6 font-bold py-4">Part</TableHead>
-                        <TableHead className="font-bold uppercase text-[10px] tracking-wider">Heat No.</TableHead>
-                        {currentUser?.role === 'super-admin' && (
-                          <TableHead className="font-bold uppercase text-[10px] tracking-wider">Journey</TableHead>
-                        )}
-                        <TableHead className="font-bold">Inward</TableHead>
-                        <TableHead className="font-bold">Outward</TableHead>
-                        <TableHead className="font-bold">Rejections</TableHead>
-                        <TableHead className="font-bold">Date</TableHead>
-                        <TableHead className="text-right font-bold">Balance</TableHead>
-                        <TableHead className="pr-6 text-right font-bold">Actions</TableHead>
+                        <TableCell colSpan={currentUser?.role === 'super-admin' ? 9 : 8} className="h-40 text-center text-muted-foreground italic">No tasks in process.</TableCell>
                       </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {inProcessRows.length === 0 ? (
-                        <TableRow>
-                          <TableCell colSpan={currentUser?.role === 'super-admin' ? 9 : 8} className="h-40 text-center text-muted-foreground italic">No tasks in process.</TableCell>
-                        </TableRow>
-                      ) : (
-                        inProcessRows.map(task => {
-                          const inward = task.stage?.inward?.qty || 0;
-                          const outward = task.stage?.outward?.qty || 0;
-                          const rejections = task.stage?.outward?.rejectionQty || 0;
-                          const balance = inward - (outward + rejections);
+                    ) : (
+                      inProcessRows.map(task => {
+                        const inward = task.stage?.inward?.qty || 0;
+                        const outward = task.stage?.outward?.qty || 0;
+                        const rejections = task.stage?.outward?.rejectionQty || 0;
+                        const balance = inward - (outward + rejections);
 
-                          return (
-                            <TableRow key={`${task._id}-${task.stageIndex}`} className="hover:bg-muted/30 group">
-                              <TableCell className="pl-6 py-4">
-                                <div className="flex flex-col">
-                                  <span className="font-bold font-mono text-primary text-sm">{task.partNumber}</span>
-                                  <span className="text-[10px] text-muted-foreground font-semibold">{task.partName || "-"}</span>
+                        return (
+                          <TableRow key={`${task._id}-${task.stageIndex}`} className="hover:bg-muted/30 group">
+                            <TableCell className="pl-6 py-4">
+                              <div className="flex flex-col">
+                                <span className="font-bold font-mono text-primary text-sm">{task.partNumber}</span>
+                                <span className="text-[10px] text-muted-foreground font-semibold">{task.partName || "-"}</span>
+                              </div>
+                            </TableCell>
+                            <TableCell>
+                              <Badge variant="outline" className="font-bold border-primary/20 bg-primary/5 text-primary text-[10px]">
+                                {task.slotLabel}
+                              </Badge>
+                            </TableCell>
+                            {currentUser?.role === 'super-admin' && (
+                              <TableCell>
+                                <div className="flex flex-col gap-0.5 max-w-[150px]">
+                                  <span className="text-[9px] font-bold text-muted-foreground/60 uppercase leading-none truncate">Step {task.stageIndex + 1}</span>
+                                  <span className="text-[11px] font-bold text-primary leading-tight truncate">At: {task.selectedLoop[task.stageIndex]?.name || "Process"}</span>
                                 </div>
                               </TableCell>
-                              <TableCell>
-                                <Badge variant="outline" className="font-bold border-primary/20 bg-primary/5 text-primary text-[10px]">
-                                  {task.slotLabel}
-                                </Badge>
-                              </TableCell>
-                              {currentUser?.role === 'super-admin' && (
-                                <TableCell>
-                                  <div className="flex flex-col gap-0.5 max-w-[150px]">
-                                    <span className="text-[9px] font-bold text-muted-foreground/60 uppercase leading-none truncate">Step {task.stageIndex + 1}</span>
-                                    <span className="text-[11px] font-bold text-primary leading-tight truncate">At: {task.selectedLoop[task.stageIndex]?.name || "Process"}</span>
-                                  </div>
-                                </TableCell>
-                              )}
-                              <TableCell className="text-sm font-semibold">{inward}</TableCell>
-                              <TableCell className="text-sm font-semibold text-muted-foreground">{outward}</TableCell>
-                              <TableCell className="text-sm font-semibold text-red-500/70">{rejections}</TableCell>
-                              <TableCell className="text-muted-foreground text-[10px]">
-                                {task.stage?.inward?.receivedAt && new Date(task.stage.inward.receivedAt).toLocaleDateString()}
-                              </TableCell>
-                              <TableCell className="text-right">
-                                <Badge className="bg-orange-100 text-orange-700 border-none font-black text-xs px-3 shadow-inner">
-                                  {balance}
-                                </Badge>
-                              </TableCell>
-                              <TableCell className="pr-6 text-right">
-                                <DropdownMenu>
-                                  <DropdownMenuTrigger asChild>
-                                    <Button variant="ghost" size="icon" type="button" className="h-8 w-8 opacity-50 group-hover:opacity-100 transition-opacity">
-                                      <MoreHorizontal className="h-4 w-4" />
-                                    </Button>
-                                  </DropdownMenuTrigger>
-                                  <DropdownMenuPortal>
-                                    <DropdownMenuContent align="end" className="w-40 border-primary/10 shadow-lg">
-                                      <DropdownMenuLabel className="text-[10px] font-bold uppercase text-muted-foreground/50">Actions</DropdownMenuLabel>
-                                      <DropdownMenuSeparator />
-                                      <DropdownMenuItem 
-                                        className="text-xs font-bold gap-2 cursor-pointer"
-                                        onSelect={(e) => {
-                                          e.preventDefault();
-                                          setSelectedTask(task);
-                                          setIsReasonsDialogOpen(true);
-                                        }}
-                                      >
-                                        <Eye className="h-3.5 w-3.5 text-primary/70" />
-                                        View Reasons
-                                      </DropdownMenuItem>
-                                      <DropdownMenuItem 
-                                        className="text-xs font-bold gap-2 cursor-pointer text-green-600 hover:text-green-700 hover:bg-green-50"
-                                        onSelect={(e) => {
-                                          e.preventDefault();
-                                          setSelectedTask(task);
-                                          setActionData({ qty: "", rejectionQty: "", notes: "", reason: "", reasons: [""] });
-                                          setShowRejections(false);
-                                          setIsOutwardDialogOpen(true);
-                                        }}
-                                      >
-                                        <ArrowRight className="h-3.5 w-3.5" />
-                                        Record Outward
-                                      </DropdownMenuItem>
-                                    </DropdownMenuContent>
-                                  </DropdownMenuPortal>
-                                </DropdownMenu>
-                              </TableCell>
-                            </TableRow>
-                          );
-                        })
-                      )}
-                    </TableBody>
-                  </Table>
-               </CardContent>
-             </Card>
+                            )}
+                            <TableCell className="text-sm font-semibold">{inward}</TableCell>
+                            <TableCell className="text-sm font-semibold text-muted-foreground">{outward}</TableCell>
+                            <TableCell className="text-sm font-semibold text-red-500/70">{rejections}</TableCell>
+                            <TableCell className="text-muted-foreground text-[10px]">
+                              {task.stage?.inward?.receivedAt && new Date(task.stage.inward.receivedAt).toLocaleDateString('en-GB')}
+                            </TableCell>
+                            <TableCell className="text-right">
+                              <Badge className="bg-orange-100 text-orange-700 border-none font-black text-xs px-3 shadow-inner">
+                                {balance}
+                              </Badge>
+                            </TableCell>
+                            <TableCell className="pr-6 text-right">
+                              <DropdownMenu>
+                                <DropdownMenuTrigger asChild>
+                                  <Button variant="ghost" size="icon" type="button" className="h-8 w-8 opacity-50 group-hover:opacity-100 transition-opacity">
+                                    <MoreHorizontal className="h-4 w-4" />
+                                  </Button>
+                                </DropdownMenuTrigger>
+                                <DropdownMenuPortal>
+                                  <DropdownMenuContent align="end" className="w-40 border-primary/10 shadow-lg">
+                                    <DropdownMenuLabel className="text-[10px] font-bold uppercase text-muted-foreground/50">Actions</DropdownMenuLabel>
+                                    <DropdownMenuSeparator />
+                                    <DropdownMenuItem
+                                      className="text-xs font-bold gap-2 cursor-pointer"
+                                      onSelect={(e) => {
+                                        e.preventDefault();
+                                        setSelectedTask(task);
+                                        setIsReasonsDialogOpen(true);
+                                      }}
+                                    >
+                                      <Eye className="h-3.5 w-3.5 text-primary/70" />
+                                      View Reasons
+                                    </DropdownMenuItem>
+                                    <DropdownMenuItem
+                                      className="text-xs font-bold gap-2 cursor-pointer text-green-600 hover:text-green-700 hover:bg-green-50"
+                                      onSelect={(e) => {
+                                        e.preventDefault();
+                                        setSelectedTask(task);
+                                        setActionData({ qty: "", rejectionQty: "", notes: "", reason: "", reasons: [""] });
+                                        setShowRejections(false);
+                                        setIsOutwardDialogOpen(true);
+                                      }}
+                                    >
+                                      <ArrowRight className="h-3.5 w-3.5" />
+                                      Record Outward
+                                    </DropdownMenuItem>
+                                  </DropdownMenuContent>
+                                </DropdownMenuPortal>
+                              </DropdownMenu>
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })
+                    )}
+                  </TableBody>
+                </Table>
+              </CardContent>
+            </Card>
           </TabsContent>
         </Tabs>
 
         {/* Initialize Inward Dialog */}
         <Dialog open={isInwardDialogOpen} onOpenChange={setIsInwardDialogOpen}>
-          <DialogContent 
+          <DialogContent
             className="max-w-md border-primary/20 shadow-2xl overflow-hidden p-0"
             onCloseAutoFocus={(e) => {
               document.body.style.pointerEvents = "";
             }}
           >
             <div className="bg-primary/5 p-6 border-b border-primary/10 flex items-center justify-between">
-               <div>
-                 <DialogTitle className="text-primary flex items-center gap-2">
-                   <ArrowDownCircle className="h-5 w-5 text-blue-600" />
-                   Initialize Inward
-                 </DialogTitle>
-                 <DialogDescription className="mt-1 text-[10px] font-black uppercase text-muted-foreground tracking-widest">
-                   Part: {selectedTask?.partNumber}
-                 </DialogDescription>
-               </div>
-               <Badge className="bg-blue-100 text-blue-700 font-bold border-none h-fit">
-                  Expected: {selectedTask?.stageIndex > 0 ? selectedTask?.stages[selectedTask.stageIndex - 1]?.outward?.qty : "-"}
-               </Badge>
+              <div>
+                <DialogTitle className="text-primary flex items-center gap-2">
+                  <ArrowDownCircle className="h-5 w-5 text-blue-600" />
+                  Initialize Inward
+                </DialogTitle>
+                <DialogDescription className="mt-1 text-[10px] font-black uppercase text-muted-foreground tracking-widest">
+                  Part: {selectedTask?.partNumber}
+                </DialogDescription>
+              </div>
+              <Badge className="bg-blue-100 text-blue-700 font-bold border-none h-fit">
+                Expected: {selectedTask?.stageIndex > 0 ? selectedTask?.stages[selectedTask.stageIndex - 1]?.outward?.qty : "-"}
+              </Badge>
             </div>
 
             <div className="p-6 space-y-5">
               <div className="space-y-2">
-                 <label className="text-[10px] font-black uppercase text-muted-foreground ml-1">Inward Quantity</label>
-                 <Input 
-                   type="number"
-                   placeholder="Enter Qty"
-                   value={actionData.qty}
-                   onChange={(e) => setActionData({ ...actionData, qty: e.target.value })}
-                   onWheel={(e) => (e.target as HTMLInputElement).blur()}
-                   className="h-12 text-lg font-bold bg-background/50 focus:border-primary/30"
-                   autoFocus
-                 />
+                <label className="text-[10px] font-black uppercase text-muted-foreground ml-1">Inward Quantity</label>
+                <Input
+                  type="number"
+                  placeholder="Enter Qty"
+                  value={actionData.qty}
+                  onChange={(e) => setActionData({ ...actionData, qty: e.target.value })}
+                  onWheel={(e) => (e.target as HTMLInputElement).blur()}
+                  className="h-12 text-lg font-bold bg-background/50 focus:border-primary/30"
+                  autoFocus
+                />
               </div>
             </div>
 
             <DialogFooter className="p-6 bg-muted/20 border-t border-primary/5 sm:justify-end gap-2">
-               <Button variant="ghost" onClick={() => setIsInwardDialogOpen(false)} className="font-bold">Cancel</Button>
-               <Button 
-                 className="bg-primary hover:bg-primary/90 font-bold px-8"
-                 disabled={loading || !actionData.qty || Number(actionData.qty) <= 0}
-                 onClick={() => handleWorkflowAction(selectedTask?._id, 'accept')}
-               >
-                 Accept Task
-               </Button>
+              <Button variant="ghost" onClick={() => setIsInwardDialogOpen(false)} className="font-bold">Cancel</Button>
+              <Button
+                className="bg-primary hover:bg-primary/90 font-bold px-8"
+                disabled={loading || !actionData.qty || Number(actionData.qty) <= 0}
+                onClick={() => handleWorkflowAction(selectedTask?._id, 'accept')}
+              >
+                Accept Task
+              </Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>
 
         {/* Reasons Dialog */}
         <Dialog open={isReasonsDialogOpen} onOpenChange={setIsReasonsDialogOpen}>
-          <DialogContent 
+          <DialogContent
             className="max-w-md border-primary/20 shadow-2xl"
             onCloseAutoFocus={(e) => {
               document.body.style.pointerEvents = "";
@@ -908,205 +882,222 @@ export default function TaskQueuePage() {
                 {selectedTask?.partNumber} • Step {selectedTask?.stageIndex + 1}
               </DialogDescription>
             </DialogHeader>
-            
+
             <div className="py-4">
               <div className="bg-muted/30 rounded-xl p-6 border border-primary/5 min-h-[100px] flex flex-col gap-3">
                 {selectedTask?.stage?.outward?.reason ? (
-                   selectedTask.stage.outward.reason.split("\n").map((line: string, i: number) => (
-                     <div key={i} className="flex gap-3 text-sm font-medium text-primary/80 animate-in slide-in-from-left-2 duration-300" style={{ animationDelay: `${i * 100}ms` }}>
-                       <div className="h-1.5 w-1.5 rounded-full bg-primary/40 mt-1.5 shrink-0" />
-                       <p className="leading-tight">{line.replace("•", "").trim()}</p>
-                     </div>
-                   ))
+                  selectedTask.stage.outward.reason.split("\n").map((line: string, i: number) => (
+                    <div key={i} className="flex gap-3 text-sm font-medium text-primary/80 animate-in slide-in-from-left-2 duration-300" style={{ animationDelay: `${i * 100}ms` }}>
+                      <div className="h-1.5 w-1.5 rounded-full bg-primary/40 mt-1.5 shrink-0" />
+                      <p className="leading-tight">{line.replace("•", "").trim()}</p>
+                    </div>
+                  ))
                 ) : (
                   <p className="text-center text-muted-foreground italic text-sm py-4">No reason points recorded for this production stage.</p>
                 )}
               </div>
             </div>
-            
+
             <DialogFooter className="sm:justify-end">
-               <Button variant="ghost" onClick={() => setIsReasonsDialogOpen(false)} className="font-bold border-primary/10">Close</Button>
+              <Button variant="ghost" onClick={() => setIsReasonsDialogOpen(false)} className="font-bold border-primary/10">Close</Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>
 
         {/* Outward Dialog (Table version) */}
         <Dialog open={isOutwardDialogOpen} onOpenChange={setIsOutwardDialogOpen}>
-          <DialogContent 
+          <DialogContent
             className="max-w-md border-orange-200 shadow-2xl overflow-hidden p-0"
             onCloseAutoFocus={(e) => {
               document.body.style.pointerEvents = "";
             }}
           >
             <div className="bg-orange-50/50 p-6 border-b border-orange-100 flex items-center justify-between">
-               <div>
-                 <DialogTitle className="text-primary flex items-center gap-2">
-                   <ArrowUpCircle className="h-5 w-5 text-green-600" />
-                   Record Outward
-                 </DialogTitle>
-                 <DialogDescription className="mt-1 text-[10px] font-black uppercase text-muted-foreground tracking-widest">
-                   Part: {selectedTask?.partNumber}
-                 </DialogDescription>
-               </div>
-               <Badge className="bg-orange-100 text-orange-700 font-bold border-none h-fit">
-                  Balance: {(selectedTask?.stage?.inward?.qty || 0) - (selectedTask?.stage?.outward?.qty || 0) - (selectedTask?.stage?.outward?.rejectionQty || 0)}
-               </Badge>
+              <div>
+                <DialogTitle className="text-primary flex items-center gap-2">
+                  <ArrowUpCircle className="h-5 w-5 text-green-600" />
+                  Record Outward
+                </DialogTitle>
+                <DialogDescription className="mt-1 text-[10px] font-black uppercase text-muted-foreground tracking-widest">
+                  Part: {selectedTask?.partNumber}
+                </DialogDescription>
+              </div>
+              <Badge className="bg-orange-100 text-orange-700 font-bold border-none h-fit">
+                Balance: {(selectedTask?.stage?.inward?.qty || 0) - (selectedTask?.stage?.outward?.qty || 0) - (selectedTask?.stage?.outward?.rejectionQty || 0)}
+              </Badge>
             </div>
 
             <div className="p-6 space-y-5">
               <div className="space-y-2">
-                 <label className="text-[10px] font-black uppercase text-muted-foreground ml-1">Outward Quantity</label>
-                 <Input 
-                   type="number"
-                   placeholder="Enter Qty"
-                   value={actionData.qty}
-                   onChange={(e) => setActionData({ ...actionData, qty: e.target.value })}
-                   onWheel={(e) => (e.target as HTMLInputElement).blur()}
-                   className={cn(
-                     "h-12 text-lg font-bold bg-background/50",
-                     Number(actionData.qty) > ((selectedTask?.stage?.inward?.qty || 0) - (selectedTask?.stage?.outward?.qty || 0) - (selectedTask?.stage?.outward?.rejectionQty || 0)) ? "border-destructive ring-destructive/20 focus-visible:ring-destructive" : "focus:border-primary/30"
-                   )}
-                 />
+                <label className="text-[10px] font-black uppercase text-muted-foreground ml-1">Outward Quantity</label>
+                <Input
+                  type="number"
+                  placeholder="Enter Qty"
+                  value={actionData.qty}
+                  onChange={(e) => setActionData({ ...actionData, qty: e.target.value })}
+                  onWheel={(e) => (e.target as HTMLInputElement).blur()}
+                  className={cn(
+                    "h-12 text-lg font-bold bg-background/50",
+                    Number(actionData.qty) > ((selectedTask?.stage?.inward?.qty || 0) - (selectedTask?.stage?.outward?.qty || 0) - (selectedTask?.stage?.outward?.rejectionQty || 0)) ? "border-destructive ring-destructive/20 focus-visible:ring-destructive" : "focus:border-primary/30"
+                  )}
+                />
               </div>
 
               <div className="flex items-center justify-between bg-muted/30 p-3 rounded-lg border border-primary/5">
-                 <Label className="text-xs font-bold uppercase text-muted-foreground flex items-center gap-2">
-                   Include Rejections?
-                   <Badge variant="outline" className="text-[8px] h-4 px-1 leading-none bg-background">Loss Protection</Badge>
-                 </Label>
-                 <Switch 
-                   checked={showRejections}
-                   onCheckedChange={(val) => {
-                     setShowRejections(val);
-                     if (!val) setActionData(prev => ({ ...prev, rejectionQty: "", reasons: [""] }));
-                   }}
-                 />
+                <Label className="text-xs font-bold uppercase text-muted-foreground flex items-center gap-2">
+                  Include Rejections?
+                  <Badge variant="outline" className="text-[8px] h-4 px-1 leading-none bg-background">Loss Protection</Badge>
+                </Label>
+                <Switch
+                  checked={showRejections}
+                  onCheckedChange={(val) => {
+                    setShowRejections(val);
+                    if (!val) setActionData(prev => ({ ...prev, rejectionQty: "", reasons: [""] }));
+                  }}
+                />
               </div>
 
               {showRejections && (
                 <div className="space-y-4 animate-in fade-in slide-in-from-top-2 duration-300">
-                   <div className="space-y-2">
-                     <label className="text-[10px] font-black uppercase text-muted-foreground ml-1">Rejection Quantity</label>
-                     <Input 
-                       type="number"
-                       placeholder="Qty"
-                       value={actionData.rejectionQty}
-                       onChange={(e) => setActionData({ ...actionData, rejectionQty: e.target.value })}
-                       onWheel={(e) => (e.target as HTMLInputElement).blur()}
-                       className="h-10 border-orange-200 bg-background/50"
-                     />
-                   </div>
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-black uppercase text-muted-foreground ml-1">Rejection Quantity</label>
+                    <Input
+                      type="number"
+                      placeholder="Qty"
+                      value={actionData.rejectionQty}
+                      onChange={(e) => setActionData({ ...actionData, rejectionQty: e.target.value })}
+                      onWheel={(e) => (e.target as HTMLInputElement).blur()}
+                      className="h-10 border-orange-200 bg-background/50"
+                    />
+                  </div>
 
-                   <div className="space-y-3 pt-1 border-t border-dashed border-muted-foreground/10">
-                     <div className="flex items-center justify-between">
-                       <label className="text-[10px] font-black uppercase text-muted-foreground/70 tracking-widest">Reason Points</label>
-                       <Button 
-                         variant="ghost" 
-                         size="sm" 
-                         className="h-6 px-2 text-[10px] font-bold text-primary hover:bg-primary/5 gap-1"
-                         onClick={addReasonPoint}
-                       >
-                         <Plus className="h-3 w-3" /> Add Point
-                       </Button>
-                     </div>
-                     <div className="space-y-2 max-h-[150px] overflow-y-auto custom-scrollbar pr-1">
-                       {actionData.reasons.map((point, idx) => (
-                          <div key={idx} className="flex gap-2">
-                             <Input 
-                               placeholder={`Point ${idx + 1}...`}
-                               value={point}
-                               onChange={(e) => updateReasonPoint(idx, e.target.value)}
-                               className="h-9 text-xs"
-                             />
-                             {actionData.reasons.length > 1 && (
-                               <Button size="icon" variant="ghost" onClick={() => removeReasonPoint(idx)} className="h-9 w-9 text-pink-500">
-                                  <Trash2 className="h-3 w-3" />
-                               </Button>
-                             )}
-                          </div>
-                        ))}
-                      </div>
+                  <div className="space-y-3 pt-1 border-t border-dashed border-muted-foreground/10">
+                    <div className="flex items-center justify-between">
+                      <label className="text-[10px] font-black uppercase text-muted-foreground/70 tracking-widest">Reason Points</label>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-6 px-2 text-[10px] font-bold text-primary hover:bg-primary/5 gap-1"
+                        onClick={addReasonPoint}
+                      >
+                        <Plus className="h-3 w-3" /> Add Point
+                      </Button>
                     </div>
-                 </div>
-               )}
+                    <div className="space-y-2 max-h-[150px] overflow-y-auto custom-scrollbar pr-1">
+                      {actionData.reasons.map((point, idx) => (
+                        <div key={idx} className="flex gap-2">
+                          <Input
+                            placeholder={`Point ${idx + 1}...`}
+                            value={point}
+                            onChange={(e) => updateReasonPoint(idx, e.target.value)}
+                            className="h-9 text-xs"
+                          />
+                          {actionData.reasons.length > 1 && (
+                            <Button size="icon" variant="ghost" onClick={() => removeReasonPoint(idx)} className="h-9 w-9 text-pink-500">
+                              <Trash2 className="h-3 w-3" />
+                            </Button>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
 
             <DialogFooter className="p-6 bg-muted/20 border-t border-primary/5 sm:justify-end gap-2">
-               <Button variant="ghost" onClick={() => setIsOutwardDialogOpen(false)} className="font-bold">Cancel</Button>
-               <Button 
-                 className="bg-green-600 hover:bg-green-700 font-bold px-8"
-                 disabled={
-                   loading || 
-                   !actionData.qty || 
-                   Number(actionData.qty) <= 0 ||
-                   (Number(actionData.qty) + (Number(actionData.rejectionQty) || 0)) > 
-                   ((selectedTask?.stage?.inward?.qty || 0) - (selectedTask?.stage?.outward?.qty || 0) - (selectedTask?.stage?.outward?.rejectionQty || 0))
-                 }
-                 onClick={() => handleWorkflowAction(selectedTask?._id, 'outward')}
-               >
-                 Confirm Forward
-               </Button>
+              <Button variant="ghost" onClick={() => setIsOutwardDialogOpen(false)} className="font-bold">Cancel</Button>
+              <Button
+                className="bg-green-600 hover:bg-green-700 font-bold px-8"
+                disabled={
+                  loading ||
+                  !actionData.qty ||
+                  Number(actionData.qty) <= 0 ||
+                  (Number(actionData.qty) + (Number(actionData.rejectionQty) || 0)) >
+                  ((selectedTask?.stage?.inward?.qty || 0) - (selectedTask?.stage?.outward?.qty || 0) - (selectedTask?.stage?.outward?.rejectionQty || 0))
+                }
+                onClick={() => handleWorkflowAction(selectedTask?._id, 'outward')}
+              >
+                Confirm Forward
+              </Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>
         {/* Manual Inward Dialog */}
         <Dialog open={isNewTaskDialogOpen} onOpenChange={setIsNewTaskDialogOpen}>
-          <DialogContent 
+          <DialogContent
             className="max-w-md border-blue-200 shadow-2xl p-0 overflow-hidden"
             onCloseAutoFocus={() => { document.body.style.pointerEvents = ""; }}
           >
             <div className="bg-blue-50/50 p-6 border-b border-blue-100 flex items-center justify-between">
-               <div>
-                 <DialogTitle className="text-primary flex items-center gap-2">
-                   <Plus className="h-5 w-5 text-blue-600" />
-                   Initialize New Production
-                 </DialogTitle>
-                 <DialogDescription className="mt-1 text-[10px] font-black uppercase text-muted-foreground tracking-widest leading-none">
-                    Available for your department
-                 </DialogDescription>
-               </div>
-               <Badge className="bg-blue-100/50 text-blue-700 font-bold border-none h-fit">
-                   {candidateBlueprints.length} Options
-               </Badge>
+              <div>
+                <DialogTitle className="text-primary flex items-center gap-2">
+                  <Plus className="h-5 w-5 text-blue-600" />
+                  Initialize New Production
+                </DialogTitle>
+                <DialogDescription className="mt-1 text-[10px] font-black uppercase text-muted-foreground tracking-widest leading-none">
+                  Available for your department
+                </DialogDescription>
+              </div>
+              <Badge className="bg-blue-100/50 text-blue-700 font-bold border-none h-fit">
+                {candidateBlueprints.length} Options
+              </Badge>
             </div>
 
             <div className="p-6 space-y-5">
-               <div className="space-y-2">
-                  <label className="text-[10px] font-black uppercase text-muted-foreground ml-1">Select Product</label>
-                  <Select value={selectedBlueprintId} onValueChange={setSelectedBlueprintId}>
-                    <SelectTrigger className="h-12 bg-background/50 border-blue-100 focus:ring-blue-200 font-medium">
-                      <SelectValue placeholder="Pick a product..." />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {candidateBlueprints.map(bp => (
+              <div className="space-y-2">
+                <label className="text-[10px] font-black uppercase text-muted-foreground ml-1">Select Product</label>
+                <Select value={selectedBlueprintId} onValueChange={setSelectedBlueprintId}>
+                  <SelectTrigger className="h-12 bg-background/50 border-blue-100 focus:ring-blue-200 font-medium">
+                    <SelectValue placeholder={candidateBlueprints.length > 0 ? "Pick a product..." : "No products available"} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {candidateBlueprints.length === 0 ? (
+                      <div className="p-4 text-xs text-center text-muted-foreground italic">
+                        No part definitions (blueprints) found.<br />
+                        Add parts in <span className="font-bold">Production Tables</span> first.
+                      </div>
+                    ) : (
+                      candidateBlueprints.map(bp => (
                         <SelectItem key={bp._id} value={bp._id} className="text-xs font-bold py-3">
                           <div className="flex flex-col">
                             <span className="font-mono text-primary">{bp.partNumber}</span>
                             <span className="text-[10px] text-muted-foreground">{bp.partName} • {bp.tableName}</span>
                           </div>
                         </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-               </div>
+                      ))
+                    )}
+                  </SelectContent>
+                </Select>
+              </div>
 
-               <div className="space-y-2">
-                  <label className="text-[10px] font-black uppercase text-muted-foreground ml-1">Initial Quantity</label>
-                  <Input 
-                    type="number"
-                    placeholder="Enter Qty"
-                    value={newInwardQty}
-                    onChange={(e) => setNewInwardQty(e.target.value)}
-                    onWheel={(e) => (e.target as HTMLInputElement).blur()}
-                    className="h-12 text-lg font-bold bg-background/50 border-blue-100"
-                  />
-               </div>
+              <div className="space-y-2">
+                <label className="text-[10px] font-black uppercase text-muted-foreground ml-1">Heat No.</label>
+                <Input
+                  placeholder="Heat No."
+                  value={newHeatNo}
+                  onChange={(e) => setNewHeatNo(e.target.value)}
+                  className="h-12 bg-background/50 border-blue-100 font-medium"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-[10px] font-black uppercase text-muted-foreground ml-1">Initial Quantity</label>
+                <Input
+                  type="number"
+                  placeholder="Enter Qty"
+                  value={newInwardQty}
+                  onChange={(e) => setNewInwardQty(e.target.value)}
+                  onWheel={(e) => (e.target as HTMLInputElement).blur()}
+                  className="h-12 text-lg font-bold bg-background/50 border-blue-100"
+                />
+              </div>
             </div>
 
             <DialogFooter className="bg-muted/30 p-4 border-t gap-2 sm:gap-0">
-               <Button variant="ghost" onClick={() => setIsNewTaskDialogOpen(false)} disabled={isInitializing} className="font-bold">Cancel</Button>
-               <Button 
-                className="bg-blue-600 hover:bg-blue-700 font-bold px-8 shadow-lg shadow-blue-200" 
+              <Button variant="ghost" onClick={() => setIsNewTaskDialogOpen(false)} disabled={isInitializing} className="font-bold">Cancel</Button>
+              <Button
+                className="bg-blue-600 hover:bg-blue-700 font-bold px-8 shadow-lg shadow-blue-200"
                 onClick={async () => {
                   if (!selectedBlueprintId || !newInwardQty) {
                     toast.error("Please select product and quantity");
@@ -1117,8 +1108,8 @@ export default function TaskQueuePage() {
                     const blueprint = candidateBlueprints.find(b => b._id === selectedBlueprintId);
                     if (!blueprint) return;
 
-                    // 1. Create a NEW ROW for this batch
-                    const createRes = await fetch(`${API_URL}/api/master-tables/${blueprint.tableId}/rows`, {
+                    // 1. Create a NEW ROW for this batch (Cloning)
+                    const createRes = await fetch(`${API_URL}/api/master-tables/${typeof blueprint.tableId === 'object' ? blueprint.tableId._id : blueprint.tableId}/rows`, {
                       method: 'POST',
                       headers: {
                         'Content-Type': 'application/json',
@@ -1128,6 +1119,8 @@ export default function TaskQueuePage() {
                         partName: blueprint.partName,
                         partNumber: blueprint.partNumber,
                         material: blueprint.material,
+                        heatNo: newHeatNo,
+                        isBlueprint: false,
                         selectedLoop: blueprint.selectedLoop.map((d: any) => d._id || d)
                       })
                     });
@@ -1144,7 +1137,7 @@ export default function TaskQueuePage() {
                       },
                       body: JSON.stringify({
                         qty: Number(newInwardQty),
-                        source: 'External Initialization'
+                        source: 'Manual Initialization'
                       })
                     });
 
@@ -1152,6 +1145,7 @@ export default function TaskQueuePage() {
                       toast.success(`Production started for ${blueprint.partNumber}`);
                       setIsNewTaskDialogOpen(false);
                       setNewInwardQty("");
+                      setNewHeatNo("");
                       setSelectedBlueprintId("");
                       fetchTasks();
                     } else {
@@ -1164,10 +1158,10 @@ export default function TaskQueuePage() {
                     setIsInitializing(false);
                   }
                 }}
-                disabled={isInitializing}
-               >
-                 {isInitializing ? <Loader2 className="h-4 w-4 animate-spin" /> : "Initialize Batch"}
-               </Button>
+                disabled={isInitializing || currentUser?.role === 'super-admin'}
+              >
+                {isInitializing ? <Loader2 className="h-4 w-4 animate-spin" /> : "Initialize Batch"}
+              </Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>

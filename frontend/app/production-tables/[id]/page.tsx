@@ -69,6 +69,8 @@ interface Row {
   partName: string;
   partNumber: string;
   material: string;
+  heatNo: string;
+  isBlueprint?: boolean;
   currentDepartmentIndex: number;
   selectedLoop: string[];
   stages: any[];
@@ -92,8 +94,13 @@ export default function TableViewPage() {
     partName: "",
     partNumber: "",
     material: "",
+    heatNo: "",
     selectedLoop: [] as string[]
   });
+  const [isAddingPart, setIsAddingPart] = useState(false);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [selectedPartFilter, setSelectedPartFilter] = useState("all");
+  const [filterOpen, setFilterOpen] = useState(false);
 
   const fetchTableData = async () => {
     try {
@@ -138,6 +145,7 @@ export default function TableViewPage() {
           partName: newPartName,
           partNumber: newPartNo,
           material: newMaterial,
+          isBlueprint: true,
           selectedLoop
         }),
       });
@@ -147,14 +155,15 @@ export default function TableViewPage() {
         setNewPartName("");
         setNewMaterial("");
         setSelectedLoop([]);
+        setIsAddingPart(false);
         fetchTableData();
         toast.success("Row added successfully");
       } else {
         const data = await response.json();
         toast.error(data.message || "Error adding row");
       }
-    } catch (error) {
-      toast.error("Error adding row");
+    } catch (error: any) {
+      toast.error(error.message || "Error adding row");
     }
   };
 
@@ -162,16 +171,14 @@ export default function TableViewPage() {
     setSelectedLoop(prev => [...prev, deptId]);
   };
 
-  const getSlotLabel = (row: Row, index: number) => {
-    // If no createdAt, use current date as fallback (for newly added rows not yet saved)
-    const date = new Date(row.createdAt || new Date());
-    const ddmm = `${date.getDate().toString().padStart(2, '0')}${(date.getMonth() + 1).toString().padStart(2, '0')}`;
-
-    // Calculate visit number for THIS department at THIS specific stage index
-    const currentDeptId = row.selectedLoop[index];
-    const visitNumber = row.selectedLoop.slice(0, index).filter(id => id === currentDeptId).length + 1;
-
-    return `S-${ddmm}-${visitNumber}`;
+  const formatDateCompact = (dateString?: string | Date) => {
+    if (!dateString) return "--/--/--";
+    const date = new Date(dateString);
+    if (isNaN(date.getTime())) return "--/--/--";
+    const dd = date.getDate().toString().padStart(2, '0');
+    const mm = (date.getMonth() + 1).toString().padStart(2, '0');
+    const yy = date.getFullYear().toString().slice(-2);
+    return `${dd}/${mm}/${yy}`;
   };
 
   const removeStepByIndex = (index: number) => {
@@ -188,6 +195,7 @@ export default function TableViewPage() {
       partName: row.partName || "",
       partNumber: row.partNumber || "",
       material: row.material || "",
+      heatNo: row.heatNo || "",
       selectedLoop: row.selectedLoop || []
     });
     // Map existing stage quantities to the temp edit data by INDEX
@@ -256,6 +264,24 @@ export default function TableViewPage() {
     }
   };
 
+  const filteredRows = rows.filter(row => {
+    // Hide blueprints from the production table view
+    if (row.isBlueprint) return false;
+
+    const matchesSearch = row.partName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      row.partNumber?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      row.heatNo?.toLowerCase().includes(searchTerm.toLowerCase());
+
+    const matchesPart = selectedPartFilter === "all" || row.partNumber === selectedPartFilter;
+
+    return matchesSearch && matchesPart;
+  });
+
+  const uniqueParts = Array.from(
+    new Map(rows.map(r => [r.partNumber, r.partName])).entries()
+  ).map(([partNumber, partName]) => ({ partNumber, partName }))
+    .sort((a, b) => a.partNumber.localeCompare(b.partNumber));
+
   if (loading) {
     return (
       <DashboardLayout>
@@ -280,20 +306,104 @@ export default function TableViewPage() {
             </Link>
             <h1 className="text-2xl font-bold tracking-tight">{table.name}</h1>
           </div>
-          {(currentUser?.role === "super-admin" || currentUser?.role === "admin") && (
-            <div className="flex items-center gap-2">
-              <Badge variant="outline" className={cn(
-                "px-3 py-1",
-                currentUser.role === "super-admin" ? "text-primary border-primary/20 bg-primary/5" : "text-muted-foreground border-muted-foreground/20"
-              )}>
-                {currentUser.role === "super-admin" ? "Super Admin Access" : "Department Access"}
-              </Badge>
+          <div className="flex items-center gap-4">
+            <div className="relative w-48 lg:w-64">
+              <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
+              <Input
+                placeholder="Search heat no..."
+                className="pl-9 h-9 bg-background border-primary/10"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+              />
             </div>
-          )}
+            <div className="w-48 lg:w-64">
+              <Popover open={filterOpen} onOpenChange={setFilterOpen}>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="outline"
+                    role="combobox"
+                    aria-expanded={filterOpen}
+                    className="w-full h-9 justify-between bg-background border-primary/10 px-3 text-sm shadow-sm font-medium"
+                  >
+                    <span className="truncate">
+                      {selectedPartFilter === "all"
+                        ? "All Parts"
+                        : uniqueParts.find((p) => p.partNumber === selectedPartFilter)?.partNumber || "Select Part..."}
+                    </span>
+                    <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-56 p-0 shadow-xl border-primary/10" align="start">
+                  <Command>
+                    <CommandInput placeholder="Search part..." className="h-8 text-xs" />
+                    <CommandEmpty className="text-xs py-2 px-4 italic">No part found.</CommandEmpty>
+                    <CommandGroup className="max-h-[220px] overflow-auto custom-scrollbar p-1">
+                      <CommandItem
+                        value="all"
+                        onSelect={() => {
+                          setSelectedPartFilter("all");
+                          setFilterOpen(false);
+                        }}
+                        className="cursor-pointer py-1.5 px-2 rounded-sm"
+                      >
+                        <Check
+                          className={cn(
+                            "mr-2 h-3.5 w-3.5 text-primary",
+                            selectedPartFilter === "all" ? "opacity-100" : "opacity-0"
+                          )}
+                        />
+                        <span className="font-bold text-xs">All Parts</span>
+                      </CommandItem>
+                      {uniqueParts.map((p) => (
+                        <CommandItem
+                          key={p.partNumber}
+                          value={`${p.partNumber} ${p.partName}`}
+                          onSelect={() => {
+                            setSelectedPartFilter(p.partNumber);
+                            setFilterOpen(false);
+                          }}
+                          className="cursor-pointer py-1.5 px-2 rounded-sm"
+                        >
+                          <Check
+                            className={cn(
+                              "mr-2 h-3.5 w-3.5 text-primary",
+                              selectedPartFilter === p.partNumber ? "opacity-100" : "opacity-0"
+                            )}
+                          />
+                          <div className="flex flex-col">
+                            <span className="font-bold text-xs">{p.partNumber}</span>
+                            {p.partName && (
+                              <span className="text-[9px] text-muted-foreground uppercase leading-none mt-0.5">{p.partName}</span>
+                            )}
+                          </div>
+                        </CommandItem>
+                      ))}
+                    </CommandGroup>
+                  </Command>
+                </PopoverContent>
+              </Popover>
+            </div>
+            {(currentUser?.role === "super-admin" || currentUser?.role === "admin") && (
+              <div className="flex items-center gap-3">
+                <Button
+                  onClick={() => setIsAddingPart(!isAddingPart)}
+                  variant={isAddingPart ? "ghost" : "default"}
+                  size="sm"
+                  className={cn(
+                    "font-bold gap-2 shadow-sm transition-all",
+                    isAddingPart ? "text-destructive hover:bg-destructive/10" : "bg-primary hover:bg-primary/90"
+                  )}
+                >
+                  {isAddingPart ? <X className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
+                  {isAddingPart ? "Cancel" : "Add Part"}
+                </Button>
+              </div>
+            )}
+          </div>
         </div>
 
         <Card className="border-none shadow-xl overflow-hidden bg-card/50 backdrop-blur-sm">
-          {(currentUser?.role === "super-admin" || currentUser?.role === "admin") && (
+          {(isAddingPart && (currentUser?.role === "super-admin" || currentUser?.role === "admin")) && (
             <CardHeader className="border-b bg-muted/20">
               <CardTitle className="text-sm font-bold flex items-center gap-2 mb-4">
                 <Plus className="h-4 w-4 text-primary" />
@@ -353,10 +463,18 @@ export default function TableViewPage() {
                                   <CommandItem
                                     key={dept._id}
                                     value={dept.name}
-                                    onSelect={() => toggleDeptInLoop(dept._id)}
+                                    disabled={isDuplicate}
+                                    onSelect={() => {
+                                      if (isDuplicate) {
+                                        toast.error(`Cannot select ${dept.name} twice consecutively`);
+                                        return;
+                                      }
+                                      toggleDeptInLoop(dept._id);
+                                    }}
+                                    className={cn(isDuplicate && "opacity-50 cursor-not-allowed")}
                                   >
                                     <div className="flex flex-col">
-                                      <span className="font-medium">{dept.name}</span>
+                                      <span className={cn("font-medium", isDuplicate && "text-muted-foreground")}>{dept.name}</span>
                                     </div>
                                     <Plus className="ml-auto h-3 w-3 opacity-50" />
                                   </CommandItem>
@@ -423,6 +541,7 @@ export default function TableViewPage() {
                   <TableHead className="w-[150px] border-r py-4 font-bold text-xs uppercase tracking-wider">Part Name</TableHead>
                   <TableHead className="w-[150px] border-r py-4 font-bold text-xs uppercase tracking-wider">Part No.</TableHead>
                   <TableHead className="w-[150px] border-r py-4 font-bold text-xs uppercase tracking-wider">Material</TableHead>
+                  <TableHead className="w-[150px] border-r py-4 font-bold text-xs uppercase tracking-wider">Heat No.</TableHead>
                   {table.departments.map(dept => (
                     <TableHead key={dept._id} className="text-center min-w-[150px] border-r py-4 font-bold text-xs uppercase tracking-wider">
                       {dept.name}
@@ -432,14 +551,14 @@ export default function TableViewPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {rows.length === 0 ? (
+                {filteredRows.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={table.departments.length + 4} className="h-32 text-center text-muted-foreground">
-                      No part numbers added yet.
+                    <TableCell colSpan={table.departments.length + 5} className="h-32 text-center text-muted-foreground italic">
+                      {searchTerm ? "No matching parts found." : "No part numbers added yet."}
                     </TableCell>
                   </TableRow>
                 ) : (
-                  rows.map(row => {
+                  filteredRows.map(row => {
                     const isEditing = editingRowId === row._id;
                     const loop = row.selectedLoop || [];
 
@@ -452,7 +571,14 @@ export default function TableViewPage() {
                               onChange={(e) => setTempRowFields(prev => ({ ...prev, partName: e.target.value }))}
                               className="h-8 text-xs"
                             />
-                          ) : row.partName || "-"}
+                          ) : (
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="truncate max-w-[100px]" title={row.partName}>{row.partName || "-"}</span>
+                              {row.isBlueprint && (
+                                <Badge className="text-[8px] h-3.5 px-1 bg-primary/10 text-primary border-primary/20 leading-none whitespace-nowrap">BLUEPRINT</Badge>
+                              )}
+                            </div>
+                          )}
                         </TableCell>
                         <TableCell className="font-bold border-r bg-muted/5 px-4 py-3">
                           {isEditing ? (
@@ -471,6 +597,15 @@ export default function TableViewPage() {
                               className="h-8 text-xs"
                             />
                           ) : row.material || "-"}
+                        </TableCell>
+                        <TableCell className="border-r">
+                          {isEditing ? (
+                            <Input
+                              value={tempRowFields.heatNo}
+                              onChange={(e) => setTempRowFields(prev => ({ ...prev, heatNo: e.target.value }))}
+                              className="h-8 text-xs"
+                            />
+                          ) : row.heatNo || "-"}
                         </TableCell>
 
                         {table.departments.map(dept => {
@@ -500,7 +635,7 @@ export default function TableViewPage() {
                                         {isEditing ? (
                                           <div className="flex flex-col gap-1 items-center pb-1">
                                             <div className="text-[9px] font-bold text-primary/60 bg-primary/5 px-1.5 py-0.5 rounded border border-primary/10">
-                                              {getSlotLabel(row, stage.index)}
+                                              ({formatDateCompact(stage.inward?.receivedAt)}) - ({formatDateCompact(stage.outward?.sentAt)})
                                             </div>
                                             <input
                                               className={cn(
@@ -516,11 +651,22 @@ export default function TableViewPage() {
                                         ) : (
                                           stage.inward?.receivedAt ? (
                                             <div className="flex flex-col gap-1 items-center">
-                                              <div className="flex items-center justify-between w-full px-2">
-                                                <span className="text-[9px] font-bold text-primary/60">Step {stage.index + 1}</span>
-                                                <Badge variant="outline" className="text-[8px] h-3.5 py-0 border-primary/20 bg-primary/5 text-primary">
-                                                  {getSlotLabel(row, stage.index)}
-                                                </Badge>
+                                              <div className="flex items-center justify-center w-full px-2">
+                                                <TooltipProvider>
+                                                  <Tooltip delayDuration={300}>
+                                                    <TooltipTrigger asChild>
+                                                      <span className="text-[9px] font-bold text-primary/60 cursor-help hover:text-primary transition-colors">
+                                                        Step {stage.index + 1}
+                                                      </span>
+                                                    </TooltipTrigger>
+                                                    <TooltipContent side="top" className="text-[10px] font-bold bg-primary text-primary-foreground border-none">
+                                                      <div className="flex flex-col items-center gap-1">
+                                                        <p className="opacity-80 uppercase text-[8px]">Timeline</p>
+                                                        <p>({formatDateCompact(stage.inward?.receivedAt)}) - ({formatDateCompact(stage.outward?.sentAt)})</p>
+                                                      </div>
+                                                    </TooltipContent>
+                                                  </Tooltip>
+                                                </TooltipProvider>
                                               </div>
                                               <div className="flex items-center gap-1 bg-blue-50 text-blue-700 px-1.5 py-0.5 rounded-full text-[9px] border border-blue-100">
                                                 <ArrowDownCircle className="h-2.5 w-2.5" />
@@ -623,13 +769,18 @@ export default function TableViewPage() {
                                                 return (
                                                   <CommandItem
                                                     key={dept._id}
+                                                    disabled={isLast}
                                                     onSelect={() => {
+                                                      if (isLast) {
+                                                        toast.error(`Cannot select ${dept.name} twice consecutively`);
+                                                        return;
+                                                      }
                                                       const newLoop = [...tempRowFields.selectedLoop, dept._id];
                                                       setTempRowFields(prev => ({ ...prev, selectedLoop: newLoop }));
                                                     }}
-                                                    className="text-[10px] font-medium py-1"
+                                                    className={cn("text-[10px] font-medium py-1", isLast && "opacity-50 cursor-not-allowed")}
                                                   >
-                                                    {dept.name}
+                                                    <span className={isLast ? "text-muted-foreground" : ""}>{dept.name}</span>
                                                     <Plus className="ml-auto h-3 w-3" />
                                                   </CommandItem>
                                                 )

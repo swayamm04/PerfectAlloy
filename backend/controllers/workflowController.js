@@ -25,17 +25,21 @@ const getTaskQueue = async (req, res) => {
 
     const deptIdStr = deptId.toString();
 
-    // Find all master tables to see where this department is in the sequence
-    const allTables = await MasterTable.find({ departments: deptIdStr });
-    const tableIds = allTables.map(t => t._id);
-
-    // Find all rows for these tables
-    const rows = await MasterTableRow.find({ tableId: { $in: tableIds } })
+    // Find all rows where this department is in the loop (regardless of table-level department lists)
+    const rows = await MasterTableRow.find({ selectedLoop: deptIdStr })
       .populate('tableId')
       .populate('selectedLoop');
     
     const filteredRows = rows.filter(row => {
       const loop = row.selectedLoop || [];
+
+      // Special handling for blueprints: they only show up for the initial department in the loop
+      if (row.isBlueprint) {
+        const firstDeptIdObj = loop[0];
+        const firstDeptIdStr = firstDeptIdObj?._id ? firstDeptIdObj._id.toString() : firstDeptIdObj?.toString();
+        return firstDeptIdStr === deptIdStr;
+      }
+
       const currentDeptIdObj = loop[row.currentDepartmentIndex];
       const currentDeptIdStr = currentDeptIdObj?._id ? currentDeptIdObj._id.toString() : currentDeptIdObj?.toString();
       const isCurrentlyAtThisDept = currentDeptIdStr === deptIdStr;
