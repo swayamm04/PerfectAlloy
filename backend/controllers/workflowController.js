@@ -161,7 +161,7 @@ const updateProcess = async (req, res) => {
 // @route   POST /api/workflow/outward/:rowId
 // @access  Private/Admin
 const completeOutward = async (req, res) => {
-  const { qty, rejectionQty, reason } = req.body;
+  const { qty, rejectionQty, reason, operatorName } = req.body;
 
   try {
     const row = await MasterTableRow.findById(req.params.rowId).populate('tableId');
@@ -188,6 +188,7 @@ const completeOutward = async (req, res) => {
     stage.outward = {
       qty,
       rejectionQty: rejectionQty || 0,
+      operatorName: operatorName || "",
       reason: reason || "",
       sentAt: new Date(),
       isCompleted: true,
@@ -220,9 +221,45 @@ const completeOutward = async (req, res) => {
   }
 };
 
+// @desc    Get past operators for a department
+// @route   GET /api/workflow/operators
+// @access  Private/Admin
+const getDepartmentOperators = async (req, res) => {
+  try {
+    const { departmentId } = req.query;
+    const deptId = departmentId || req.user.department;
+
+    if (!deptId) {
+      return res.status(400).json({ message: 'Department assignment required' });
+    }
+
+    // Find all rows where this department is in the loop and has completed an outward stage
+    const deptIdStr = deptId.toString();
+    const rows = await MasterTableRow.find({ selectedLoop: deptIdStr });
+
+    const operators = new Set();
+
+    rows.forEach(row => {
+      const loop = row.selectedLoop || [];
+      row.stages.forEach((stage, index) => {
+        const loopDeptIdObj = loop[index];
+        const loopDeptIdStr = loopDeptIdObj?._id ? loopDeptIdObj._id.toString() : loopDeptIdObj?.toString();
+        if (loopDeptIdStr === deptIdStr && stage.outward?.isCompleted && stage.outward?.operatorName) {
+          operators.add(stage.outward.operatorName.trim());
+        }
+      });
+    });
+
+    res.json(Array.from(operators).sort());
+  } catch (error) {
+    res.status(500).json({ message: 'Server Error' });
+  }
+};
+
 module.exports = {
   getTaskQueue,
   acceptInward,
   updateProcess,
   completeOutward,
+  getDepartmentOperators,
 };

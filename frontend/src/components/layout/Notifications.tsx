@@ -48,7 +48,7 @@ export const Notifications = () => {
         setUnreadCount(data.filter((n: Notification) => !n.isRead).length);
       }
     } catch (error) {
-      console.error("Error fetching notifications:", error);
+      console.error("Error fetching notifications:", error instanceof Error ? error.message : "Network error");
     }
   };
 

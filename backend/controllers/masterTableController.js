@@ -75,7 +75,7 @@ const deleteMasterTable = async (req, res) => {
 // @route   POST /api/master-tables/:id/rows
 // @access  Private/Admin
 const createMasterTableRow = async (req, res) => {
-  const { partName, partNumber, material, heatNo, selectedLoop, isBlueprint } = req.body;
+  const { partName, partNumber, material, heatNo, customerName, selectedLoop, isBlueprint } = req.body;
 
   try {
     // Check for duplicate Heat No for the same Part Number (only for active rows)
@@ -98,6 +98,7 @@ const createMasterTableRow = async (req, res) => {
       partNumber,
       material,
       heatNo,
+      customerName,
       isBlueprint: isBlueprint || false,
       selectedLoop: selectedLoop || [],
       stages: selectedLoop ? selectedLoop.map(() => ({})) : [],
@@ -129,7 +130,7 @@ const createMasterTableRow = async (req, res) => {
 // @route   PUT /api/master-tables/rows/:rowId
 // @access  Private/Admin
 const updateMasterTableRow = async (req, res) => {
-  const { partName, partNumber, material, heatNo, selectedLoop, statusValues, isBlueprint } = req.body;
+  const { partName, partNumber, material, heatNo, customerName, selectedLoop, statusValues, isBlueprint } = req.body;
 
   try {
     const row = await MasterTableRow.findById(req.params.rowId);
@@ -158,6 +159,7 @@ const updateMasterTableRow = async (req, res) => {
       row.partNumber = partNumber || row.partNumber;
       row.material = material !== undefined ? material : row.material;
       row.heatNo = heatNo !== undefined ? heatNo : row.heatNo;
+      row.customerName = customerName !== undefined ? customerName : row.customerName;
       row.isBlueprint = isBlueprint !== undefined ? isBlueprint : row.isBlueprint;
       if (selectedLoop) {
         row.selectedLoop = selectedLoop;

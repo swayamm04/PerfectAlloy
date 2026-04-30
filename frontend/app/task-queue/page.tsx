@@ -58,6 +58,7 @@ interface Row {
   partNumber: string;
   material: string;
   heatNo: string;
+  customerName?: string;
   isBlueprint?: boolean;
   currentDepartmentIndex: number;
   selectedLoop: any[];
@@ -85,10 +86,13 @@ export default function TaskQueuePage() {
   const [actionData, setActionData] = useState({
     qty: "",
     rejectionQty: "",
+    operatorName: "",
     notes: "",
     reason: "",
     reasons: [""]
   });
+  const [operatorSuggestions, setOperatorSuggestions] = useState<string[]>([]);
+  const [showOperatorDropdown, setShowOperatorDropdown] = useState(false);
 
   const [isInwardDialogOpen, setIsInwardDialogOpen] = useState(false);
   const [isOutwardDialogOpen, setIsOutwardDialogOpen] = useState(false);
@@ -100,6 +104,7 @@ export default function TaskQueuePage() {
   const [selectedBlueprintId, setSelectedBlueprintId] = useState("");
   const [newInwardQty, setNewInwardQty] = useState("");
   const [newHeatNo, setNewHeatNo] = useState("");
+  const [newCustomerName, setNewCustomerName] = useState("");
   const [isInitializing, setIsInitializing] = useState(false);
   const [canInitialize, setCanInitialize] = useState(false);
 
@@ -126,6 +131,26 @@ export default function TaskQueuePage() {
     } finally {
       setFetching(false);
       setLoading(false);
+    }
+  };
+
+  const fetchOperatorSuggestions = async () => {
+    if (!currentUser) return;
+    const deptId = selectedDeptId || (typeof currentUser.department === 'object' ? (currentUser.department as any)._id : currentUser.department);
+    if (!deptId) return;
+
+    try {
+      const response = await fetch(`${API_URL}/api/workflow/operators?departmentId=${deptId}`, {
+        headers: {
+          Authorization: `Bearer ${currentUser?.token}`,
+        },
+      });
+      const data = await response.json();
+      if (response.ok) {
+        setOperatorSuggestions(data);
+      }
+    } catch (error) {
+      console.error("Error fetching operators:", error);
     }
   };
 
@@ -193,6 +218,7 @@ export default function TaskQueuePage() {
   useEffect(() => {
     if (currentUser && (selectedDeptId || currentUser.role !== 'super-admin')) {
       fetchTasks();
+      fetchOperatorSuggestions();
     }
   }, [selectedDeptId, startDate, endDate, currentUser]);
 
@@ -240,6 +266,7 @@ export default function TaskQueuePage() {
         payload = {
           qty: Number(actionData.qty),
           rejectionQty: Number(actionData.rejectionQty) || 0,
+          operatorName: actionData.operatorName,
           reason: finalReason
         };
       }
@@ -255,10 +282,11 @@ export default function TaskQueuePage() {
 
       if (response.ok) {
         toast.success(`Task ${action} successfully completed`);
-        setActionData({ qty: "", rejectionQty: "", notes: "", reason: "", reasons: [""] });
+        setActionData({ qty: "", rejectionQty: "", operatorName: "", notes: "", reason: "", reasons: [""] });
         setActiveAction(null);
         setIsOutwardDialogOpen(false);
         setIsInwardDialogOpen(false);
+        setShowOperatorDropdown(false);
         fetchTasks();
       } else {
         const error = await response.json();
@@ -493,7 +521,7 @@ export default function TaskQueuePage() {
                                 disabled={currentUser?.role === 'super-admin'}
                                 onClick={() => {
                                   setSelectedTask(task);
-                                  setActionData({ qty: prevQty !== "-" ? prevQty.toString() : "", rejectionQty: "", notes: "", reason: "", reasons: [""] });
+                                  setActionData({ qty: prevQty !== "-" ? prevQty.toString() : "", rejectionQty: "", operatorName: "", notes: "", reason: "", reasons: [""] });
                                   setIsInwardDialogOpen(true);
                                 }}
                               >
@@ -569,7 +597,7 @@ export default function TaskQueuePage() {
                                 disabled={currentUser?.role === 'super-admin'}
                                 onClick={() => {
                                   setSelectedTask(task);
-                                  setActionData({ qty: "", rejectionQty: "", notes: "", reason: "", reasons: [""] });
+                                  setActionData({ qty: "", rejectionQty: "", operatorName: "", notes: "", reason: "", reasons: [""] });
                                   setShowRejections(false);
                                   setIsOutwardDialogOpen(true);
                                 }}
@@ -791,7 +819,7 @@ export default function TaskQueuePage() {
                                       onSelect={(e) => {
                                         e.preventDefault();
                                         setSelectedTask(task);
-                                        setActionData({ qty: "", rejectionQty: "", notes: "", reason: "", reasons: [""] });
+                                        setActionData({ qty: "", rejectionQty: "", operatorName: "", notes: "", reason: "", reasons: [""] });
                                         setShowRejections(false);
                                         setIsOutwardDialogOpen(true);
                                       }}
@@ -928,6 +956,38 @@ export default function TaskQueuePage() {
             </div>
 
             <div className="p-6 space-y-5">
+              <div className="space-y-2 relative">
+                <label className="text-[10px] font-black uppercase text-muted-foreground ml-1">Operator Name</label>
+                <Input
+                  placeholder="Operator Name"
+                  value={actionData.operatorName}
+                  onChange={(e) => {
+                    setActionData({ ...actionData, operatorName: e.target.value });
+                    setShowOperatorDropdown(true);
+                  }}
+                  onFocus={() => setShowOperatorDropdown(true)}
+                  onBlur={() => setTimeout(() => setShowOperatorDropdown(false), 200)}
+                  className="h-12 font-medium bg-background/50 focus:border-primary/30"
+                />
+                {showOperatorDropdown && actionData.operatorName.trim().length > 0 && operatorSuggestions.filter(name => name.toLowerCase().includes(actionData.operatorName.toLowerCase())).length > 0 && (
+                  <div className="absolute top-[68px] left-0 w-full z-50 bg-background border border-primary/10 rounded-md shadow-lg max-h-[150px] overflow-y-auto">
+                    {operatorSuggestions.filter(name => name.toLowerCase().includes(actionData.operatorName.toLowerCase())).map((name) => (
+                      <div
+                        key={name}
+                        className="px-4 py-3 text-sm cursor-pointer hover:bg-muted font-medium transition-colors border-b last:border-0 border-primary/5"
+                        onMouseDown={(e) => {
+                          e.preventDefault();
+                          setActionData({ ...actionData, operatorName: name });
+                          setShowOperatorDropdown(false);
+                        }}
+                      >
+                        {name}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
               <div className="space-y-2">
                 <label className="text-[10px] font-black uppercase text-muted-foreground ml-1">Outward Quantity</label>
                 <Input
@@ -1082,6 +1142,16 @@ export default function TaskQueuePage() {
               </div>
 
               <div className="space-y-2">
+                <label className="text-[10px] font-black uppercase text-muted-foreground ml-1">Customer Name (Optional)</label>
+                <Input
+                  placeholder="Customer Name"
+                  value={newCustomerName}
+                  onChange={(e) => setNewCustomerName(e.target.value)}
+                  className="h-12 bg-background/50 border-blue-100 font-medium"
+                />
+              </div>
+
+              <div className="space-y-2">
                 <label className="text-[10px] font-black uppercase text-muted-foreground ml-1">Initial Quantity</label>
                 <Input
                   type="number"
@@ -1120,6 +1190,7 @@ export default function TaskQueuePage() {
                         partNumber: blueprint.partNumber,
                         material: blueprint.material,
                         heatNo: newHeatNo,
+                        customerName: newCustomerName,
                         isBlueprint: false,
                         selectedLoop: blueprint.selectedLoop.map((d: any) => d._id || d)
                       })
@@ -1146,6 +1217,7 @@ export default function TaskQueuePage() {
                       setIsNewTaskDialogOpen(false);
                       setNewInwardQty("");
                       setNewHeatNo("");
+                      setNewCustomerName("");
                       setSelectedBlueprintId("");
                       fetchTasks();
                     } else {

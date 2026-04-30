@@ -24,6 +24,10 @@ const masterTableRowSchema = mongoose.Schema(
       type: String,
       trim: true,
     },
+    customerName: {
+      type: String,
+      trim: true,
+    },
     isBlueprint: {
       type: Boolean,
       default: false,
@@ -54,6 +58,7 @@ const masterTableRowSchema = mongoose.Schema(
         outward: {
           qty: Number,
           rejectionQty: { type: Number, default: 0 },
+          operatorName: String,
           sentAt: Date,
           isCompleted: { type: Boolean, default: false },
           reason: String,
