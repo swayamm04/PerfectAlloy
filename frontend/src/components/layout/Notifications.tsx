@@ -20,6 +20,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { API_URL } from "@/src/lib/api";
 import { cn } from "@/lib/utils";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 
 interface Notification {
   _id: string;
@@ -34,6 +35,7 @@ export const Notifications = () => {
   const { user } = useAuth();
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
+  const pathname = usePathname();
 
   const fetchNotifications = async () => {
     try {
@@ -77,6 +79,36 @@ export const Notifications = () => {
     }
   };
 
+  const markAllAsRead = async () => {
+    if (unreadCount === 0) return;
+    try {
+      const response = await fetch(`${API_URL}/api/notifications/read-all`, {
+        method: "PUT",
+        headers: {
+          Authorization: `Bearer ${user?.token}`,
+        },
+      });
+      if (response.ok) {
+        setNotifications(prev => prev.map(n => ({ ...n, isRead: true })));
+        setUnreadCount(0);
+      }
+    } catch (error) {
+      console.error("Error marking all notifications as read:", error);
+    }
+  };
+
+  useEffect(() => {
+    if (pathname === '/task-queue' && unreadCount > 0) {
+      markAllAsRead();
+    }
+  }, [pathname, unreadCount]);
+
+  const handleOpenChange = (open: boolean) => {
+    if (open && unreadCount > 0) {
+      markAllAsRead();
+    }
+  };
+
   const getIcon = (type: string) => {
     switch (type) {
       case 'task_assigned': return <Clock className="h-4 w-4 text-blue-500" />;
@@ -86,7 +118,7 @@ export const Notifications = () => {
   };
 
   return (
-    <Popover>
+    <Popover onOpenChange={handleOpenChange}>
       <PopoverTrigger asChild>
         <Button variant="ghost" size="icon" className="relative h-10 w-10 rounded-full">
           <Bell className="h-5 w-5" />

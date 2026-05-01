@@ -28,7 +28,8 @@ const getTaskQueue = async (req, res) => {
     // Find all rows where this department is in the loop (regardless of table-level department lists)
     const rows = await MasterTableRow.find({ selectedLoop: deptIdStr })
       .populate('tableId')
-      .populate('selectedLoop');
+      .populate('selectedLoop')
+      .sort({ updatedAt: -1 });
     
     const filteredRows = rows.filter(row => {
       const loop = row.selectedLoop || [];
@@ -172,11 +173,110 @@ const completeOutward = async (req, res) => {
     // Verify it is this department's turn
     const loop = row.selectedLoop || [];
     const currentDeptId = loop[row.currentDepartmentIndex];
+    let isBalanceForward = false;
+    let handledIndex = row.currentDepartmentIndex;
+
     if (!currentDeptId || currentDeptId.toString() !== deptId) {
-      return res.status(403).json({ message: "It is not your department's turn for this task" });
+      // It's not their active turn. Check if they are trying to forward a balance.
+      let lastHandledIndex = -1;
+      for (let i = row.currentDepartmentIndex - 1; i >= 0; i--) {
+        if (loop[i].toString() === deptId) {
+          lastHandledIndex = i;
+          break;
+        }
+      }
+
+      if (lastHandledIndex !== -1) {
+        const pastStage = row.stages[lastHandledIndex];
+        const inwardQty = pastStage.inward?.qty || 0;
+        const outwardQty = pastStage.outward?.qty || 0;
+        const rejQty = pastStage.outward?.rejectionQty || 0;
+        const balance = inwardQty - (outwardQty + rejQty);
+
+        const splitQty = Number(qty) + Number(rejectionQty || 0);
+
+        if (balance > 0 && splitQty <= balance) {
+          isBalanceForward = true;
+          handledIndex = lastHandledIndex;
+        } else if (splitQty > balance) {
+          return res.status(400).json({ message: 'Quantity exceeds available balance' });
+        } else {
+          return res.status(403).json({ message: "It is not your department's turn for this task" });
+        }
+      } else {
+        return res.status(403).json({ message: "It is not your department's turn for this task" });
+      }
     }
 
-    const stage = row.stages[row.currentDepartmentIndex];
+    if (isBalanceForward) {
+      const splitQty = Number(qty) + Number(rejectionQty || 0);
+
+      // 1. Decrease original row's inward qty at handledIndex
+      row.stages[handledIndex].inward.qty -= splitQty;
+      row.markModified('stages');
+      await row.save();
+
+      // 2. Create a new split row
+      const newStages = row.stages.map((s, index) => {
+        if (index < handledIndex) {
+          return {
+            inward: { ...s.inward, qty: 0 },
+            process: s.process,
+            outward: { ...s.outward, qty: 0, rejectionQty: 0, isCompleted: true }
+          };
+        } else if (index === handledIndex) {
+          return {
+            inward: { 
+              qty: splitQty, 
+              receivedAt: s.inward.receivedAt, 
+              source: s.inward.source 
+            },
+            process: { status: 'Completed', updatedAt: new Date() },
+            outward: {
+              qty: Number(qty),
+              rejectionQty: Number(rejectionQty || 0),
+              operatorName: operatorName || "",
+              reason: reason || "",
+              sentAt: new Date(),
+              isCompleted: true,
+            }
+          };
+        } else {
+          return {}; // Reset future stages
+        }
+      });
+
+      const nextIndex = handledIndex + 1;
+
+      const newRow = new MasterTableRow({
+        tableId: row.tableId,
+        partName: row.partName,
+        partNumber: row.partNumber,
+        material: row.material,
+        heatNo: row.heatNo,
+        customerName: row.customerName,
+        isBlueprint: false, // Split rows shouldn't act as blueprints
+        selectedLoop: row.selectedLoop,
+        currentDepartmentIndex: nextIndex,
+        stages: newStages
+      });
+
+      await newRow.save();
+
+      if (nextIndex < loop.length) {
+        const nextDeptId = loop[nextIndex];
+        await Notification.create({
+          departmentId: nextDeptId,
+          message: `New partial task for ${newRow.partNumber} received from ${req.user.name}`,
+          type: 'task_assigned',
+          link: `/task-queue`,
+        });
+      }
+
+      return res.json(row); // Return original row to frontend (it will re-fetch anyway)
+    }
+
+    const stage = row.stages[handledIndex];
     
     if (!stage || !stage.inward || !stage.inward.receivedAt) {
       return res.status(400).json({ message: 'Inward not yet accepted' });
@@ -197,7 +297,7 @@ const completeOutward = async (req, res) => {
     stage.process.status = 'Completed';
 
     // Move to next department in part's selected loop
-    const nextIndex = row.currentDepartmentIndex + 1;
+    const nextIndex = handledIndex + 1;
     
     if (nextIndex < loop.length) {
       row.currentDepartmentIndex = nextIndex;

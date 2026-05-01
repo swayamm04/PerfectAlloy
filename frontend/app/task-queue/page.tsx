@@ -19,7 +19,9 @@ import {
   MoreHorizontal,
   Eye,
   ArrowRight,
-  Clock
+  Clock,
+  Map,
+  Check
 } from "lucide-react";
 import { API_URL } from "@/src/lib/api";
 import { Badge } from "@/components/ui/badge";
@@ -97,6 +99,7 @@ export default function TaskQueuePage() {
   const [isInwardDialogOpen, setIsInwardDialogOpen] = useState(false);
   const [isOutwardDialogOpen, setIsOutwardDialogOpen] = useState(false);
   const [isReasonsDialogOpen, setIsReasonsDialogOpen] = useState(false);
+  const [isTrackDialogOpen, setIsTrackDialogOpen] = useState(false);
   const [isNewTaskDialogOpen, setIsNewTaskDialogOpen] = useState(false);
 
   const [selectedTask, setSelectedTask] = useState<any>(null);
@@ -715,6 +718,19 @@ export default function TaskQueuePage() {
                                       <Eye className="h-3.5 w-3.5 text-primary/70" />
                                       View Reasons
                                     </DropdownMenuItem>
+                                    {currentUser?.role === 'super-admin' && (
+                                      <DropdownMenuItem
+                                        className="text-xs font-bold gap-2 cursor-pointer text-blue-600 hover:text-blue-700 hover:bg-blue-50"
+                                        onSelect={(e) => {
+                                          e.preventDefault();
+                                          setSelectedTask(task);
+                                          setIsTrackDialogOpen(true);
+                                        }}
+                                      >
+                                        <Map className="h-3.5 w-3.5" />
+                                        Track
+                                      </DropdownMenuItem>
+                                    )}
                                   </DropdownMenuContent>
                                 </DropdownMenuPortal>
                               </DropdownMenu>
@@ -814,19 +830,34 @@ export default function TaskQueuePage() {
                                       <Eye className="h-3.5 w-3.5 text-primary/70" />
                                       View Reasons
                                     </DropdownMenuItem>
-                                    <DropdownMenuItem
-                                      className="text-xs font-bold gap-2 cursor-pointer text-green-600 hover:text-green-700 hover:bg-green-50"
-                                      onSelect={(e) => {
-                                        e.preventDefault();
-                                        setSelectedTask(task);
-                                        setActionData({ qty: "", rejectionQty: "", operatorName: "", notes: "", reason: "", reasons: [""] });
-                                        setShowRejections(false);
-                                        setIsOutwardDialogOpen(true);
-                                      }}
-                                    >
-                                      <ArrowRight className="h-3.5 w-3.5" />
-                                      Record Outward
-                                    </DropdownMenuItem>
+                                    {currentUser?.role === 'super-admin' && (
+                                      <DropdownMenuItem
+                                        className="text-xs font-bold gap-2 cursor-pointer text-blue-600 hover:text-blue-700 hover:bg-blue-50"
+                                        onSelect={(e) => {
+                                          e.preventDefault();
+                                          setSelectedTask(task);
+                                          setIsTrackDialogOpen(true);
+                                        }}
+                                      >
+                                        <Map className="h-3.5 w-3.5" />
+                                        Track
+                                      </DropdownMenuItem>
+                                    )}
+                                    {currentUser?.role !== 'super-admin' && (
+                                      <DropdownMenuItem
+                                        className="text-xs font-bold gap-2 cursor-pointer text-green-600 hover:text-green-700 hover:bg-green-50"
+                                        onSelect={(e) => {
+                                          e.preventDefault();
+                                          setSelectedTask(task);
+                                          setActionData({ qty: "", rejectionQty: "", operatorName: "", notes: "", reason: "", reasons: [""] });
+                                          setShowRejections(false);
+                                          setIsOutwardDialogOpen(true);
+                                        }}
+                                      >
+                                        <ArrowRight className="h-3.5 w-3.5" />
+                                        Record Outward
+                                      </DropdownMenuItem>
+                                    )}
                                   </DropdownMenuContent>
                                 </DropdownMenuPortal>
                               </DropdownMenu>
@@ -1234,6 +1265,132 @@ export default function TaskQueuePage() {
               >
                 {isInitializing ? <Loader2 className="h-4 w-4 animate-spin" /> : "Initialize Batch"}
               </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+        {/* Track Dialog */}
+        <Dialog open={isTrackDialogOpen} onOpenChange={setIsTrackDialogOpen}>
+          <DialogContent 
+            className="max-w-2xl border-primary/20 shadow-2xl p-0 overflow-hidden max-h-[85vh] flex flex-col"
+            onCloseAutoFocus={(e) => {
+              document.body.style.pointerEvents = "";
+            }}
+          >
+            <div className="bg-muted/30 p-6 border-b flex items-center justify-between sticky top-0 z-10 backdrop-blur-md">
+              <div>
+                <DialogTitle className="text-xl font-bold flex items-center gap-2">
+                  <Map className="h-5 w-5 text-primary" />
+                  Product Tracking Journey
+                </DialogTitle>
+                <div className="flex flex-col gap-1 mt-2">
+                  <div className="flex items-center gap-2">
+                    <span className="font-mono font-bold text-primary">{selectedTask?.partNumber}</span>
+                    <span className="text-muted-foreground text-xs font-semibold">• {selectedTask?.partName}</span>
+                  </div>
+                  {selectedTask?.customerName && (
+                    <Badge variant="outline" className="w-fit text-[10px] bg-background border-primary/20">Customer: {selectedTask.customerName}</Badge>
+                  )}
+                </div>
+              </div>
+              <Badge className="bg-blue-100 text-blue-700 hover:bg-blue-100 border-none font-bold shadow-sm">
+                Heat: {selectedTask?.heatNo || "N/A"}
+              </Badge>
+            </div>
+            
+            <div className="p-6 flex-1 overflow-y-auto custom-scrollbar bg-slate-50/50">
+              <div className="space-y-6 relative before:absolute before:inset-0 before:ml-5 before:-translate-x-px md:before:mx-auto md:before:translate-x-0 before:h-full before:w-0.5 before:bg-gradient-to-b before:from-transparent before:via-muted-foreground/20 before:to-transparent">
+                
+                {/* Initialization Stage */}
+                <div className="relative flex items-center justify-between md:justify-normal md:odd:flex-row-reverse group">
+                  <div className="flex items-center justify-center w-10 h-10 rounded-full border-4 border-slate-50 bg-primary text-primary-foreground shadow shrink-0 md:order-1 md:group-odd:-translate-x-1/2 md:group-even:translate-x-1/2 z-10">
+                    <ClipboardList className="h-4 w-4" />
+                  </div>
+                  <div className="w-[calc(100%-4rem)] md:w-[calc(50%-2.5rem)] p-4 rounded-xl border bg-card shadow-sm">
+                    <div className="flex items-center justify-between mb-1">
+                      <h4 className="font-bold text-sm text-primary">Initialized</h4>
+                      <time className="text-[10px] font-bold text-muted-foreground">
+                        {selectedTask?.createdAt ? new Date(selectedTask.createdAt).toLocaleDateString() : "N/A"}
+                      </time>
+                    </div>
+                    <div className="text-xs text-muted-foreground space-y-1 mt-2">
+                      <div className="flex items-center gap-1"><span className="font-semibold text-foreground">By:</span> {selectedTask?.stages?.[0]?.inward?.source || "Manual Entry"}</div>
+                      <div className="flex items-center gap-1"><span className="font-semibold text-foreground">Initial Qty:</span> <Badge className="bg-blue-100 text-blue-700 h-5 px-1.5 shadow-none border-none">{selectedTask?.stages?.[0]?.inward?.qty || 0}</Badge></div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Workflow Stages */}
+                {selectedTask?.stages?.map((stage: any, index: number) => {
+                  const dept = selectedTask.selectedLoop[index];
+                  const isCompleted = stage.outward?.isCompleted;
+                  const isCurrent = !isCompleted && stage.inward?.receivedAt;
+                  
+                  return (
+                    <div key={index} className="relative flex items-center justify-between md:justify-normal md:odd:flex-row-reverse group">
+                      <div className={cn(
+                        "flex items-center justify-center w-10 h-10 rounded-full border-4 border-slate-50 shadow shrink-0 md:order-1 md:group-odd:-translate-x-1/2 md:group-even:translate-x-1/2 z-10",
+                        isCompleted ? "bg-green-500 text-white" : isCurrent ? "bg-orange-500 text-white animate-pulse" : "bg-muted text-muted-foreground"
+                      )}>
+                        {isCompleted ? <Check className="h-4 w-4" /> : isCurrent ? <Loader2 className="h-4 w-4 animate-spin" /> : <Clock className="h-4 w-4" />}
+                      </div>
+                      
+                      <div className={cn(
+                        "w-[calc(100%-4rem)] md:w-[calc(50%-2.5rem)] p-4 rounded-xl border shadow-sm transition-all",
+                        isCurrent ? "bg-orange-50/50 border-orange-200" : "bg-card"
+                      )}>
+                        <div className="flex items-center justify-between mb-2 pb-2 border-b border-muted/50">
+                          <h4 className="font-bold text-sm flex items-center gap-2">
+                            {dept?.name || "Unknown Department"}
+                            {isCurrent && <Badge variant="outline" className="text-[9px] h-4 bg-orange-100 text-orange-700 border-orange-200">IN PROGRESS</Badge>}
+                          </h4>
+                        </div>
+                        
+                        <div className="space-y-3 text-xs">
+                          {/* Inward details */}
+                          <div className="bg-muted/30 p-2 rounded-md">
+                            <p className="text-[10px] font-bold uppercase text-muted-foreground mb-1">Inward</p>
+                            {stage.inward?.receivedAt ? (
+                              <div className="flex justify-between items-center">
+                                <span className="font-semibold">{new Date(stage.inward.receivedAt).toLocaleDateString()}</span>
+                                <Badge className="bg-blue-100 text-blue-700 font-bold shadow-none border-none">Qty: {stage.inward.qty}</Badge>
+                              </div>
+                            ) : (
+                              <span className="text-muted-foreground italic">Waiting to receive...</span>
+                            )}
+                          </div>
+
+                          {/* Outward details */}
+                          {stage.outward?.isCompleted && (
+                            <div className="bg-green-50/50 p-2 rounded-md border border-green-100">
+                              <div className="flex justify-between items-center mb-1">
+                                <p className="text-[10px] font-bold uppercase text-green-700">Outward</p>
+                                <span className="font-semibold text-green-700">{new Date(stage.outward.sentAt).toLocaleDateString()}</span>
+                              </div>
+                              <div className="space-y-1">
+                                <div className="flex justify-between">
+                                  <span className="text-muted-foreground">Operator:</span>
+                                  <span className="font-semibold">{stage.outward.operatorName || "N/A"}</span>
+                                </div>
+                                <div className="flex justify-between items-center mt-1">
+                                  <div className="flex gap-2">
+                                    <Badge className="bg-green-100 text-green-700 font-bold shadow-none border-none">Forwarded: {stage.outward.qty}</Badge>
+                                    {stage.outward.rejectionQty > 0 && (
+                                      <Badge className="bg-red-100 text-red-700 font-bold shadow-none border-none">Rejected: {stage.outward.rejectionQty}</Badge>
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+            <DialogFooter className="p-4 bg-muted/20 border-t sm:justify-end">
+              <Button variant="ghost" onClick={() => setIsTrackDialogOpen(false)} className="font-bold">Close Tracking</Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>
