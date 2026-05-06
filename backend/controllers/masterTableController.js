@@ -78,6 +78,10 @@ const createMasterTableRow = async (req, res) => {
   const { partName, partNumber, material, heatNo, customerName, selectedLoop, isBlueprint } = req.body;
 
   try {
+    if (!customerName) {
+      return res.status(400).json({ message: 'Customer Name is compulsory' });
+    }
+
     // Check for duplicate Heat No for the same Part Number (only for active rows)
     if (!isBlueprint && heatNo) {
       const existing = await MasterTableRow.findOne({

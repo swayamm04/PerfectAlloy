@@ -74,6 +74,7 @@ interface Row {
   currentDepartmentIndex: number;
   selectedLoop: string[];
   stages: any[];
+  customerName?: string;
   createdAt?: string;
 }
 
@@ -89,12 +90,14 @@ export default function TableViewPage() {
   const [selectedLoop, setSelectedLoop] = useState<string[]>([]);
   const [savingRow, setSavingRow] = useState<string | null>(null);
   const [editingRowId, setEditingRowId] = useState<string | null>(null);
+  const [newCustomerName, setNewCustomerName] = useState("");
   const [tempRowData, setTempRowData] = useState<Record<string, string>>({});
   const [tempRowFields, setTempRowFields] = useState({
     partName: "",
     partNumber: "",
     material: "",
     heatNo: "",
+    customerName: "",
     selectedLoop: [] as string[]
   });
   const [isAddingPart, setIsAddingPart] = useState(false);
@@ -133,6 +136,10 @@ export default function TableViewPage() {
       toast.error("Part Number is required");
       return;
     }
+    if (!newCustomerName.trim()) {
+      toast.error("Customer Name is required");
+      return;
+    }
 
     try {
       const response = await fetch(`${API_URL}/api/master-tables/${params.id}/rows`, {
@@ -145,6 +152,7 @@ export default function TableViewPage() {
           partName: newPartName,
           partNumber: newPartNo,
           material: newMaterial,
+          customerName: newCustomerName,
           isBlueprint: true,
           selectedLoop
         }),
@@ -154,6 +162,7 @@ export default function TableViewPage() {
         setNewPartNo("");
         setNewPartName("");
         setNewMaterial("");
+        setNewCustomerName("");
         setSelectedLoop([]);
         setIsAddingPart(false);
         fetchTableData();
@@ -196,6 +205,7 @@ export default function TableViewPage() {
       partNumber: row.partNumber || "",
       material: row.material || "",
       heatNo: row.heatNo || "",
+      customerName: row.customerName || "",
       selectedLoop: row.selectedLoop || []
     });
     // Map existing stage quantities to the temp edit data by INDEX
@@ -409,7 +419,8 @@ export default function TableViewPage() {
                 <Plus className="h-4 w-4 text-primary" />
                 Add New Part
               </CardTitle>
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
+              <div className="space-y-5">
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
                 <div className="space-y-1">
                   <label className="text-[10px] font-bold uppercase text-muted-foreground ml-1">Part Name</label>
                   <Input
@@ -438,8 +449,20 @@ export default function TableViewPage() {
                   />
                 </div>
                 <div className="space-y-1">
+                  <label className="text-[10px] font-bold uppercase text-muted-foreground ml-1">Customer Name *</label>
+                  <Input
+                    placeholder="Customer Name"
+                    className="h-10 bg-background border-muted-foreground/20 border-primary/50"
+                    value={newCustomerName}
+                    onChange={(e) => setNewCustomerName(e.target.value)}
+                  />
+                </div>
+              </div>
+
+              <div className="flex flex-col sm:flex-row items-end justify-end gap-4 mt-2">
+                <div className="space-y-1 w-full sm:w-1/2 lg:w-1/3">
                   <label className="text-[10px] font-bold uppercase text-muted-foreground ml-1">Loop Selection</label>
-                  <div className="flex gap-2">
+                  <div className="flex gap-2 w-full">
                     <Popover>
                       <PopoverTrigger asChild>
                         <Button variant="outline" className="h-10 w-full justify-between bg-background border-muted-foreground/20 overflow-hidden text-xs">
@@ -485,12 +508,13 @@ export default function TableViewPage() {
                         </Command>
                       </PopoverContent>
                     </Popover>
-                    <Button size="default" onClick={handleAddRow} className="h-10 font-bold px-6 ml-2">
+                    <Button size="default" onClick={handleAddRow} className="h-10 font-bold px-8 ml-4 shrink-0 shadow-md">
                       Add Row
                     </Button>
                   </div>
                 </div>
               </div>
+            </div>
 
               {selectedLoop.length > 0 && (
                 <div className="mt-6 p-4 rounded-xl bg-primary/5 border border-primary/10 animate-in fade-in slide-in-from-top-2 duration-300">
@@ -541,6 +565,7 @@ export default function TableViewPage() {
                   <TableHead className="w-[150px] border-r py-4 font-bold text-xs uppercase tracking-wider">Part Name</TableHead>
                   <TableHead className="w-[150px] border-r py-4 font-bold text-xs uppercase tracking-wider">Part No.</TableHead>
                   <TableHead className="w-[150px] border-r py-4 font-bold text-xs uppercase tracking-wider">Material</TableHead>
+                  <TableHead className="w-[150px] border-r py-4 font-bold text-xs uppercase tracking-wider">Customer</TableHead>
                   <TableHead className="w-[150px] border-r py-4 font-bold text-xs uppercase tracking-wider">Heat No.</TableHead>
                   {table.departments.map(dept => (
                     <TableHead key={dept._id} className="text-center min-w-[150px] border-r py-4 font-bold text-xs uppercase tracking-wider">
@@ -553,7 +578,7 @@ export default function TableViewPage() {
               <TableBody>
                 {filteredRows.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={table.departments.length + 5} className="h-32 text-center text-muted-foreground italic">
+                    <TableCell colSpan={table.departments.length + 6} className="h-32 text-center text-muted-foreground italic">
                       {searchTerm ? "No matching parts found." : "No part numbers added yet."}
                     </TableCell>
                   </TableRow>
@@ -597,6 +622,15 @@ export default function TableViewPage() {
                               className="h-8 text-xs"
                             />
                           ) : row.material || "-"}
+                        </TableCell>
+                        <TableCell className="border-r">
+                          {isEditing ? (
+                            <Input
+                              value={tempRowFields.customerName}
+                              onChange={(e) => setTempRowFields(prev => ({ ...prev, customerName: e.target.value }))}
+                              className="h-8 text-xs"
+                            />
+                          ) : row.customerName || "-"}
                         </TableCell>
                         <TableCell className="border-r">
                           {isEditing ? (

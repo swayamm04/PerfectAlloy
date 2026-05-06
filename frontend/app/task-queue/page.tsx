@@ -107,9 +107,9 @@ export default function TaskQueuePage() {
   const [selectedBlueprintId, setSelectedBlueprintId] = useState("");
   const [newInwardQty, setNewInwardQty] = useState("");
   const [newHeatNo, setNewHeatNo] = useState("");
-  const [newCustomerName, setNewCustomerName] = useState("");
   const [isInitializing, setIsInitializing] = useState(false);
   const [canInitialize, setCanInitialize] = useState(false);
+  const [selectedIncomingTasks, setSelectedIncomingTasks] = useState<string[]>([]);
 
   const fetchTasks = async () => {
     if (!currentUser) return;
@@ -303,6 +303,47 @@ export default function TaskQueuePage() {
     }
   };
 
+  const handleBulkInward = async () => {
+    if (selectedIncomingTasks.length === 0) return;
+    setLoading(true);
+    let successCount = 0;
+    try {
+      for (const taskId of selectedIncomingTasks) {
+        const taskObj = incoming.find(t => t._id === taskId);
+        if (!taskObj) continue;
+        
+        const prevQty = taskObj.stageIndex > 0 ? taskObj.stages[taskObj.stageIndex - 1]?.outward?.qty : null;
+        if (!prevQty || prevQty === "-") continue;
+
+        const response = await fetch(`${API_URL}/api/workflow/accept/${taskId}`, {
+          method: 'POST',
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${currentUser?.token}`,
+          },
+          body: JSON.stringify({ qty: Number(prevQty), source: 'External' }),
+        });
+
+        if (response.ok) {
+          successCount++;
+        }
+      }
+      
+      if (successCount > 0) {
+        toast.success(`Successfully inwarded ${successCount} task(s)`);
+        setSelectedIncomingTasks([]);
+        fetchTasks();
+      } else {
+        toast.error("Failed to inward selected tasks. Make sure they have a valid previous quantity.");
+      }
+    } catch (error) {
+      console.error("Bulk workflow error:", error);
+      toast.error("Network error during bulk inward");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const getDeptId = () => selectedDeptId || (typeof currentUser?.department === 'object' ? (currentUser.department as any)._id : currentUser?.department);
 
   const allStageTasks = tasks.flatMap(task => {
@@ -343,9 +384,34 @@ export default function TaskQueuePage() {
 
   const incoming = filteredTasks.filter(t => t.isCurrentStage && !t.stage.inward?.receivedAt && !t.isBlueprint);
   const inProgress = filteredTasks.filter(t => t.isCurrentStage && t.stage.inward?.receivedAt && !t.stage.outward?.isCompleted && !t.isBlueprint);
-  const outwarded = filteredTasks.filter(t => t.stage.outward?.isCompleted && !t.isBlueprint);
+  const rawOutwarded = filteredTasks.filter(t => t.stage.outward?.isCompleted && !t.isBlueprint);
+  
+  // Group outwarded tasks by partNumber + heatNo + slotLabel
+  const groupedOutwardedMap = new globalThis.Map();
+  rawOutwarded.forEach(t => {
+    const key = `${t.partNumber}-${t.slotLabel}`;
+    if (!groupedOutwardedMap.has(key)) {
+      // Deep copy stage to avoid mutating original state
+      groupedOutwardedMap.set(key, { ...t, stage: { ...t.stage, inward: { ...t.stage.inward }, outward: { ...t.stage.outward } } });
+    } else {
+      const existing = groupedOutwardedMap.get(key);
+      const newInward = t.stage?.inward?.qty || 0;
+      const newOutward = t.stage?.outward?.qty || 0;
+      const newRej = t.stage?.outward?.rejectionQty || 0;
+      
+      existing.stage.inward.qty = (existing.stage.inward?.qty || 0) + newInward;
+      existing.stage.outward.qty = (existing.stage.outward?.qty || 0) + newOutward;
+      existing.stage.outward.rejectionQty = (existing.stage.outward?.rejectionQty || 0) + newRej;
+      
+      // Keep the latest sentAt date
+      if (t.stage?.outward?.sentAt && (!existing.stage.outward.sentAt || new Date(t.stage.outward.sentAt) > new Date(existing.stage.outward.sentAt))) {
+        existing.stage.outward.sentAt = t.stage.outward.sentAt;
+      }
+    }
+  });
+  const outwarded = Array.from(groupedOutwardedMap.values());
 
-  const inProcessRows = filteredTasks.filter(t => {
+  const rawInProcessRows = filteredTasks.filter(t => {
     if (!t.stage.inward?.receivedAt) return false;
     const inward = t.stage.inward.qty || 0;
     const outward = t.stage.outward?.qty || 0;
@@ -353,6 +419,29 @@ export default function TaskQueuePage() {
     const balance = inward - (outward + rejections);
     return balance > 0;
   });
+
+  // Group inProcessRows (Balance tab) by partNumber + heatNo + slotLabel
+  const groupedBalanceMap = new globalThis.Map();
+  rawInProcessRows.forEach(t => {
+    const key = `${t.partNumber}-${t.slotLabel}`;
+    if (!groupedBalanceMap.has(key)) {
+      groupedBalanceMap.set(key, { ...t, stage: { ...t.stage, inward: { ...t.stage.inward }, outward: { ...t.stage?.outward } } });
+    } else {
+      const existing = groupedBalanceMap.get(key);
+      const newInward = t.stage?.inward?.qty || 0;
+      const newOutward = t.stage?.outward?.qty || 0;
+      const newRej = t.stage?.outward?.rejectionQty || 0;
+      
+      existing.stage.inward.qty = (existing.stage.inward?.qty || 0) + newInward;
+      if (existing.stage.outward) {
+        existing.stage.outward.qty = (existing.stage.outward?.qty || 0) + newOutward;
+        existing.stage.outward.rejectionQty = (existing.stage.outward?.rejectionQty || 0) + newRej;
+      } else {
+        existing.stage.outward = { qty: newOutward, rejectionQty: newRej };
+      }
+    }
+  });
+  const inProcessRows = Array.from(groupedBalanceMap.values());
 
   return (
     <DashboardLayout>
@@ -449,17 +538,30 @@ export default function TaskQueuePage() {
                 <ArrowDownCircle className="h-4 w-4 text-blue-500" />
                 Available for Inward
               </h3>
-              {canInitialize && (
-                <Button
-                  size="sm"
-                  className="gap-2 bg-blue-600 hover:bg-blue-700 font-bold h-9 shadow-md transition-all active:scale-95"
-                  onClick={() => setIsNewTaskDialogOpen(true)}
-                  disabled={currentUser?.role === 'super-admin'}
-                >
-                  <Plus className="h-4 w-4" />
-                  New Manual Inward
-                </Button>
-              )}
+              <div className="flex items-center gap-2">
+                {selectedIncomingTasks.length > 0 && (
+                  <Button
+                    size="sm"
+                    className="gap-2 bg-green-600 hover:bg-green-700 font-bold h-9 shadow-md transition-all active:scale-95"
+                    onClick={handleBulkInward}
+                    disabled={currentUser?.role === 'super-admin' || loading}
+                  >
+                    <Check className="h-4 w-4" />
+                    Bulk Accept ({selectedIncomingTasks.length})
+                  </Button>
+                )}
+                {canInitialize && (
+                  <Button
+                    size="sm"
+                    className="gap-2 bg-blue-600 hover:bg-blue-700 font-bold h-9 shadow-md transition-all active:scale-95"
+                    onClick={() => setIsNewTaskDialogOpen(true)}
+                    disabled={currentUser?.role === 'super-admin'}
+                  >
+                    <Plus className="h-4 w-4" />
+                    New Manual Inward
+                  </Button>
+                )}
+              </div>
             </div>
 
             <Card className="border-none shadow-xl">
@@ -467,7 +569,24 @@ export default function TaskQueuePage() {
                 <Table>
                   <TableHeader className="bg-muted/50">
                     <TableRow>
-                      <TableHead className="pl-6 font-bold py-4">Part</TableHead>
+                      <TableHead className="w-[50px] pl-6 py-4">
+                        <input
+                          type="checkbox"
+                          className="w-4 h-4 rounded border-primary/20 bg-background accent-primary cursor-pointer"
+                          checked={incoming.length > 0 && selectedIncomingTasks.length === incoming.length}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setSelectedIncomingTasks(incoming.filter(t => {
+                                const prevQty = t.stageIndex > 0 ? t.stages[t.stageIndex - 1]?.outward?.qty : null;
+                                return prevQty && prevQty !== "-";
+                              }).map(t => t._id));
+                            } else {
+                              setSelectedIncomingTasks([]);
+                            }
+                          }}
+                        />
+                      </TableHead>
+                      <TableHead className="font-bold py-4">Part</TableHead>
                       <TableHead className="font-bold uppercase text-[10px] tracking-wider">Heat No.</TableHead>
                       <TableHead className="font-bold uppercase text-[10px] tracking-wider">Journey</TableHead>
                       {currentUser?.role === 'super-admin' && <TableHead className="font-bold">Step</TableHead>}
@@ -478,7 +597,7 @@ export default function TaskQueuePage() {
                   <TableBody>
                     {incoming.length === 0 ? (
                       <TableRow>
-                        <TableCell colSpan={currentUser?.role === 'super-admin' ? 6 : 5} className="h-40 text-center text-muted-foreground italic">No incoming tasks.</TableCell>
+                        <TableCell colSpan={currentUser?.role === 'super-admin' ? 7 : 6} className="h-40 text-center text-muted-foreground italic">No incoming tasks.</TableCell>
                       </TableRow>
                     ) : (
                       incoming.map(task => {
@@ -487,6 +606,21 @@ export default function TaskQueuePage() {
                         return (
                           <TableRow key={`${task._id}-${task.stageIndex}`} className="hover:bg-muted/30 group font-medium">
                             <TableCell className="pl-6 py-4">
+                              <input
+                                type="checkbox"
+                                className="w-4 h-4 rounded border-primary/20 bg-background accent-primary cursor-pointer"
+                                checked={selectedIncomingTasks.includes(task._id)}
+                                disabled={prevQty === "-" || !prevQty}
+                                onChange={(e) => {
+                                  if (e.target.checked) {
+                                    setSelectedIncomingTasks(prev => [...prev, task._id]);
+                                  } else {
+                                    setSelectedIncomingTasks(prev => prev.filter(id => id !== task._id));
+                                  }
+                                }}
+                              />
+                            </TableCell>
+                            <TableCell className="py-4">
                               <div className="flex flex-col">
                                 <span className="font-bold font-mono text-primary text-sm">{task.partNumber}</span>
                                 <span className="text-[10px] text-muted-foreground font-semibold">{task.partName || "-"}</span>
@@ -630,9 +764,7 @@ export default function TaskQueuePage() {
                       <TableHead className="font-bold">Prev. Sent</TableHead>
                       <TableHead className="font-bold">Open Stock</TableHead>
                       <TableHead className="font-bold">Inward</TableHead>
-                      <TableHead className="font-bold">Cum. Inward</TableHead>
                       <TableHead className="font-bold">Outward</TableHead>
-                      <TableHead className="font-bold">Cum. Outward</TableHead>
                       <TableHead className="font-bold">Balance</TableHead>
                       <TableHead className="font-bold">Date</TableHead>
                       <TableHead className="font-bold">Status</TableHead>
@@ -681,9 +813,7 @@ export default function TaskQueuePage() {
                             <TableCell className="font-medium text-muted-foreground text-sm">{prevSent}</TableCell>
                             <TableCell className="font-medium text-muted-foreground text-sm">{openStock}</TableCell>
                             <TableCell className="text-sm font-semibold">{task.stage?.inward?.qty}</TableCell>
-                            <TableCell className="font-bold text-blue-600/80 text-sm">{cumInward}</TableCell>
                             <TableCell className="text-sm font-semibold">{task.stage?.outward?.qty}</TableCell>
-                            <TableCell className="font-bold text-green-600/80 text-sm">{cumOutward}</TableCell>
                             <TableCell className={cn(
                               "font-black text-sm",
                               balance > 0 ? "text-orange-600" : "text-primary"
@@ -1173,16 +1303,6 @@ export default function TaskQueuePage() {
               </div>
 
               <div className="space-y-2">
-                <label className="text-[10px] font-black uppercase text-muted-foreground ml-1">Customer Name (Optional)</label>
-                <Input
-                  placeholder="Customer Name"
-                  value={newCustomerName}
-                  onChange={(e) => setNewCustomerName(e.target.value)}
-                  className="h-12 bg-background/50 border-blue-100 font-medium"
-                />
-              </div>
-
-              <div className="space-y-2">
                 <label className="text-[10px] font-black uppercase text-muted-foreground ml-1">Initial Quantity</label>
                 <Input
                   type="number"
@@ -1221,7 +1341,7 @@ export default function TaskQueuePage() {
                         partNumber: blueprint.partNumber,
                         material: blueprint.material,
                         heatNo: newHeatNo,
-                        customerName: newCustomerName,
+                        customerName: blueprint.customerName,
                         isBlueprint: false,
                         selectedLoop: blueprint.selectedLoop.map((d: any) => d._id || d)
                       })
@@ -1248,7 +1368,6 @@ export default function TaskQueuePage() {
                       setIsNewTaskDialogOpen(false);
                       setNewInwardQty("");
                       setNewHeatNo("");
-                      setNewCustomerName("");
                       setSelectedBlueprintId("");
                       fetchTasks();
                     } else {

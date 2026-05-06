@@ -2,32 +2,32 @@
 
 import { useState, useEffect } from "react";
 import { DashboardLayout } from "@/src/components/layout/DashboardLayout";
-import { 
-  Table, 
-  TableBody, 
-  TableCell, 
-  TableHead, 
-  TableHeader, 
-  TableRow 
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow
 } from "@/components/ui/table";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { 
-  Select, 
-  SelectContent, 
-  SelectItem, 
-  SelectTrigger, 
-  SelectValue 
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue
 } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/src/context/AuthContext";
 import { toast } from "sonner";
-import { 
-  Calendar as CalendarIcon, 
-  User as UserIcon, 
-  Search, 
-  Filter, 
+import {
+  Calendar as CalendarIcon,
+  User as UserIcon,
+  Search,
+  Filter,
   RefreshCw,
   Clock,
   ChevronRight,
@@ -37,11 +37,11 @@ import {
   FileDown,
   FileSpreadsheet
 } from "lucide-react";
-import { 
-  Tooltip, 
-  TooltipContent, 
-  TooltipProvider, 
-  TooltipTrigger 
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger
 } from "@/src/components/ui/tooltip";
 import {
   DropdownMenu,
@@ -71,8 +71,8 @@ export default function ActivityLogView() {
   const { user: currentUser } = useAuth();
   const [activities, setActivities] = useState<Activity[]>([]);
   const [loading, setLoading] = useState(true);
-  const [users, setUsers] = useState<{_id: string, name: string}[]>([]);
-  
+  const [users, setUsers] = useState<{ _id: string, name: string }[]>([]);
+
   // Filters
   const [selectedUser, setSelectedUser] = useState("all");
   const [startDate, setStartDate] = useState("");
@@ -80,7 +80,7 @@ export default function ActivityLogView() {
 
   const formatLogDetails = (details: string | undefined | null) => {
     if (!details) return <span className="text-primary-foreground text-xs opacity-70 italic">No extra details recorded.</span>;
-    
+
     if (details.startsWith('Deleted Resource')) {
       return (
         <div className="flex items-center gap-2 p-1">
@@ -89,18 +89,21 @@ export default function ActivityLogView() {
         </div>
       );
     }
-    
+
     try {
       const parsed = JSON.parse(details);
       const masked = { ...parsed };
-      if (masked.password) masked.password = "••••••••";
+      const ignoredKeys = ['isBlueprint', 'selectedLoop', '_id', '__v', 'createdAt', 'updatedAt', 'password', 'stages', 'token'];
+      ignoredKeys.forEach(key => delete masked[key]);
       
+      if (Object.keys(masked).length === 0) return null;
+
       return (
         <div className="flex flex-col gap-2 p-1 max-w-[320px] divide-y divide-white/5">
           {Object.entries(masked).map(([key, value]) => (
             <div key={key} className="flex items-start gap-3 py-1.5 first:pt-0 last:pb-0">
-              <span className="font-black text-primary/60 uppercase text-[9px] tracking-widest min-w-[75px] pt-1 leading-none">{key}</span>
-              <span className="text-primary-foreground font-bold text-xs break-all leading-normal flex-1">
+              <span className="font-black text-white/60 uppercase text-[9px] tracking-widest min-w-[75px] pt-1 leading-none">{key}</span>
+              <span className="text-white font-bold text-xs break-all leading-normal flex-1">
                 {typeof value === 'object' ? JSON.stringify(value) : String(value)}
               </span>
             </div>
@@ -110,6 +113,48 @@ export default function ActivityLogView() {
     } catch {
       return <span className="text-primary-foreground font-medium text-xs p-1">{details}</span>;
     }
+  };
+
+  const getReadableAction = (action: string) => {
+    if (!action.includes('/api/')) return action;
+    const lowerAction = action.toLowerCase();
+
+    // Workflow
+    if (lowerAction.includes('/api/workflow/accept')) return "Accepted Inward Task";
+    if (lowerAction.includes('/api/workflow/outward')) return "Recorded Outward Task";
+    if (lowerAction.includes('/api/workflow/process')) return "Updated Task Process";
+
+    // Notifications
+    if (lowerAction.includes('/api/notifications/read-all')) return "Marked Notifications as Read";
+    if (lowerAction.includes('/api/notifications/read')) return "Read Notification";
+
+    // Master Tables
+    if (lowerAction.includes('/api/master-tables') && lowerAction.includes('/rows') && lowerAction.includes('post')) return "Added Part Definition / Initialization";
+    if (lowerAction.includes('/api/master-tables/rows') && lowerAction.includes('put')) return "Updated Part Definition";
+    if (lowerAction.includes('/api/master-tables/rows') && lowerAction.includes('delete')) return "Deleted Part Definition";
+    if (lowerAction.includes('/api/master-tables') && lowerAction.includes('post')) return "Created Master Table";
+    if (lowerAction.includes('/api/master-tables') && lowerAction.includes('put')) return "Updated Master Table";
+    if (lowerAction.includes('/api/master-tables') && lowerAction.includes('delete')) return "Deleted Master Table";
+
+    // Users
+    if (lowerAction.includes('/api/users/login')) return "User Logged In";
+    if (lowerAction.includes('/api/users/profile')) return "Updated Personal Profile";
+    if (lowerAction.includes('/api/users') && lowerAction.includes('post')) return "Created New User";
+    if (lowerAction.includes('/api/users') && lowerAction.includes('put')) return "Updated User Information";
+    if (lowerAction.includes('/api/users') && lowerAction.includes('delete')) return "Deleted User";
+
+    // Departments
+    if (lowerAction.includes('/api/departments') && lowerAction.includes('post')) return "Created Department";
+    if (lowerAction.includes('/api/departments') && lowerAction.includes('put')) return "Updated Department";
+    if (lowerAction.includes('/api/departments') && lowerAction.includes('delete')) return "Deleted Department";
+
+    // Clients
+    if (lowerAction.includes('/api/clients') && lowerAction.includes('post')) return "Created Client Address";
+    if (lowerAction.includes('/api/clients') && lowerAction.includes('put')) return "Updated Client Address";
+    if (lowerAction.includes('/api/clients') && lowerAction.includes('delete')) return "Deleted Client Address";
+
+    // Fallback: Make it slightly more readable by removing technical HTTP method if unknown
+    return action.split(' ').slice(1).join(' ') || action;
   };
 
   const fetchActivities = async () => {
@@ -157,20 +202,25 @@ export default function ActivityLogView() {
 
   useEffect(() => {
     if (currentUser?.role === 'super-admin') {
-      fetchActivities();
       fetchUsers();
     }
   }, [currentUser]);
 
+  useEffect(() => {
+    if (currentUser?.role === 'super-admin') {
+      fetchActivities();
+    }
+  }, [currentUser, startDate, endDate, selectedUser]);
+
   const exportToCSV = () => {
     if (activities.length === 0) return;
-    
+
     const headers = ["Timestamp", "User", "Role", "Action", "Resource"];
     const rows = activities.map(log => [
       format(new Date(log.timestamp), 'dd/MM/yyyy hh:mm:ss a'),
       log.user?.name || "Unknown",
       log.user?.role || "N/A",
-      log.action,
+      getReadableAction(log.action),
       log.resource
     ]);
 
@@ -200,13 +250,13 @@ export default function ActivityLogView() {
     doc.setFontSize(11);
     doc.setTextColor(100);
     doc.text(`Generated on: ${format(new Date(), 'dd/MM/yyyy hh:mm a')}`, 14, 30);
-    
+
     const tableColumn = ["Date", "Time", "User", "Action", "Resource"];
     const tableRows = activities.map(log => [
       format(new Date(log.timestamp), 'dd/MM/yyyy'),
       format(new Date(log.timestamp), 'hh:mm:ss a'),
       log.user?.name || "Unknown",
-      log.action,
+      getReadableAction(log.action),
       log.resource
     ]);
 
@@ -223,15 +273,7 @@ export default function ActivityLogView() {
     toast.success("PDF Exported successfully");
   };
 
-  const handleApplyFilters = () => {
-    fetchActivities();
-  };
-
-  const resetFilters = () => {
-    setSelectedUser("all");
-    setStartDate("");
-    setEndDate("");
-  };
+  // Filters trigger automatically via useEffect
 
   if (currentUser?.role !== "super-admin") {
     return (
@@ -288,14 +330,14 @@ export default function ActivityLogView() {
               </div>
             </CardHeader>
             <CardContent>
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
                 <div className="space-y-2">
                   <Label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">From Date</Label>
                   <div className="relative">
                     <CalendarIcon className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
-                    <Input 
-                      type="date" 
-                      value={startDate} 
+                    <Input
+                      type="date"
+                      value={startDate}
                       onChange={(e) => setStartDate(e.target.value)}
                       className="pl-10 focus-visible:ring-primary h-11"
                     />
@@ -305,9 +347,9 @@ export default function ActivityLogView() {
                   <Label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">To Date</Label>
                   <div className="relative">
                     <CalendarIcon className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
-                    <Input 
-                      type="date" 
-                      value={endDate} 
+                    <Input
+                      type="date"
+                      value={endDate}
                       onChange={(e) => setEndDate(e.target.value)}
                       className="pl-10 focus-visible:ring-primary h-11"
                     />
@@ -329,15 +371,6 @@ export default function ActivityLogView() {
                       </SelectContent>
                     </Select>
                   </div>
-                </div>
-                <div className="flex gap-2 h-11">
-                  <Button onClick={handleApplyFilters} className="flex-1 font-semibold">
-                    <Search className="h-4 w-4 mr-2" />
-                    Apply
-                  </Button>
-                  <Button variant="ghost" onClick={resetFilters} className="px-3" title="Clear Filters">
-                    Reset
-                  </Button>
                 </div>
               </div>
             </CardContent>
@@ -398,10 +431,10 @@ export default function ActivityLogView() {
                             <Tooltip>
                               <TooltipTrigger asChild>
                                 <span className="font-semibold text-sm group-hover:text-primary transition-colors underline decoration-primary/30 decoration-2 underline-offset-4 cursor-pointer">
-                                  {log.action}
+                                  {getReadableAction(log.action)}
                                 </span>
                               </TooltipTrigger>
-                              <TooltipContent side="right" className="bg-slate-900 border-primary/20 shadow-xl p-3">
+                              <TooltipContent side="right" className="bg-slate-900 border-primary/20 shadow-xl p-3 max-w-[400px]">
                                 {formatLogDetails(log.details)}
                               </TooltipContent>
                             </Tooltip>

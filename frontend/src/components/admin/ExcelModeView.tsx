@@ -59,6 +59,8 @@ interface Row {
   heatNo?: string;
   material?: string;
   stages: Stage[];
+  isBlueprint?: boolean;
+  selectedLoop?: string[];
 }
 
 export default function ExcelModeView() {
@@ -142,9 +144,11 @@ export default function ExcelModeView() {
   }
 
   const filteredRows = tableData?.rows.filter(row =>
-    row.partNumber.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    row.partName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    (row.heatNo && row.heatNo.toLowerCase().includes(searchQuery.toLowerCase()))
+    !row.isBlueprint && (
+      row.partNumber.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      row.partName.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (row.heatNo && row.heatNo.toLowerCase().includes(searchQuery.toLowerCase()))
+    )
   ) || [];
 
   const getAggregatedRows = (data: Row[]) => {
@@ -200,9 +204,13 @@ export default function ExcelModeView() {
     // Prepare rows
     const excelRows = finalRows.map(row => {
       let rowGrandTotal = 0;
-      const stageWips = tableData.masterTable.departments.map((_, idx) => {
-        const stage = row.stages[idx];
-        const wip = stage ? (stage.inward?.qty || 0) - (stage.outward?.qty || 0) - (stage.outward?.rejectionQty || 0) : 0;
+      const stageWips = tableData.masterTable.departments.map((dept) => {
+        let wip = 0;
+        (row.stages || []).forEach((stage, sIdx) => {
+          if (row.selectedLoop && row.selectedLoop[sIdx] === dept._id) {
+            wip += (stage.inward?.qty || 0) - (stage.outward?.qty || 0) - (stage.outward?.rejectionQty || 0);
+          }
+        });
         rowGrandTotal += Math.max(0, wip);
         return wip > 0 ? wip : 0;
       });
@@ -278,9 +286,13 @@ export default function ExcelModeView() {
 
     const tableRows = finalRows.map(row => {
       let rowGrandTotal = 0;
-      const stageWips = tableData.masterTable.departments.map((_, idx) => {
-        const stage = row.stages[idx];
-        const wip = stage ? (stage.inward?.qty || 0) - (stage.outward?.qty || 0) - (stage.outward?.rejectionQty || 0) : 0;
+      const stageWips = tableData.masterTable.departments.map((dept) => {
+        let wip = 0;
+        (row.stages || []).forEach((stage, sIdx) => {
+          if (row.selectedLoop && row.selectedLoop[sIdx] === dept._id) {
+            wip += (stage.inward?.qty || 0) - (stage.outward?.qty || 0) - (stage.outward?.rejectionQty || 0);
+          }
+        });
         rowGrandTotal += Math.max(0, wip);
         return wip > 0 ? wip : "-";
       });
@@ -501,8 +513,12 @@ export default function ExcelModeView() {
                           {row.material || "PL 33 MV"}
                         </TableCell>
                         {tableData?.masterTable.departments.map((dept, idx) => {
-                          const stage = row.stages[idx];
-                          const wip = stage ? (stage.inward?.qty || 0) - (stage.outward?.qty || 0) - (stage.outward?.rejectionQty || 0) : 0;
+                          let wip = 0;
+                          (row.stages || []).forEach((stage, sIdx) => {
+                            if (row.selectedLoop && row.selectedLoop[sIdx] === dept._id) {
+                              wip += (stage.inward?.qty || 0) - (stage.outward?.qty || 0) - (stage.outward?.rejectionQty || 0);
+                            }
+                          });
                           rowGrandTotal += Math.max(0, wip);
 
                           return (
