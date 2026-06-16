@@ -17,7 +17,10 @@ import {
   Info, 
   Check, 
   AlertTriangle,
-  Trash2
+  Trash2,
+  Edit,
+  Save,
+  X
 } from "lucide-react";
 import { API_URL } from "@/src/lib/api";
 import { cn } from "@/lib/utils";
@@ -144,6 +147,9 @@ export default function MachineHourRatePage() {
   const [machineRates, setMachineRates] = useState<MachineHourRateData[]>([]);
   const [equipmentRows, setEquipmentRows] = useState<EquipmentRow[]>([]);
   const [operatorRows, setOperatorRows] = useState<OperatorRow[]>([]);
+  const [systemSettings, setSystemSettings] = useState<Record<string, string>>({
+    power_universal_value: "8"
+  });
   
   // Page States
   const [selectedMachine, setSelectedMachine] = useState<string>("");
@@ -230,6 +236,15 @@ export default function MachineHourRatePage() {
       });
       const mhrData = await mhrResponse.json();
       setMachineRates(mhrData || []);
+
+      // Fetch System Settings
+      const settingsResponse = await fetch(`${API_URL}/api/system-settings`, {
+        headers: { Authorization: `Bearer ${currentUser?.token}` }
+      });
+      if (settingsResponse.ok) {
+        const settingsData = await settingsResponse.json();
+        setSystemSettings(settingsData || { power_universal_value: "8" });
+      }
 
       // Set default selected machine
       if (eqList.length > 0) {
@@ -440,12 +455,17 @@ export default function MachineHourRatePage() {
       };
     });
 
-    // Parse other manual columns
-    const powerCost = parseFloat(vals.power_cost) || 0;
+    // Fetch values from the equipment table for calculations
+    const eqRow = equipmentRows.find(r => r.designation.toLowerCase() === selectedMachine.toLowerCase());
+    const power = eqRow ? parseFloat(eqRow.values.power || "0") : 0;
+    const powerFactor = eqRow ? parseFloat(eqRow.values.power_factor || "0") : 0;
+    const rangeValue = eqRow ? parseFloat(eqRow.values.range_value || "0") : 0;
+    const universalPowerVal = parseFloat(systemSettings.power_universal_value || "8") || 8;
+    const powerCost = ((power * powerFactor) * rangeValue) / universalPowerVal;
     const consumablesCost = parseFloat(vals.consumables_cost) || 0;
     const maintenanceCost = parseFloat(vals.maintenance_cost) || 0;
     const rentCost = parseFloat(vals.rent_cost) || 0;
-    const wiringCost = parseFloat(vals.wiring_cost) || 0;
+    const wiringCost = hasWiringCost ? (parseFloat(vals.wiring_cost) || 0) : 0;
 
     // Parse custom rows
     let customRows: Array<{ id: string; name: string; alloc: string; cost: string }> = [];
@@ -588,7 +608,7 @@ export default function MachineHourRatePage() {
       costPerSecond,
       utFactor
     };
-  }, [activeMachineData, operatorRows, selectedLabourList, depreciationAndInterestCost]);
+  }, [activeMachineData, operatorRows, selectedLabourList, depreciationAndInterestCost, equipmentRows, selectedMachine, systemSettings]);
 
   // Handler for manual edits
   const handleValueChange = (key: string, value: string) => {
@@ -737,6 +757,22 @@ export default function MachineHourRatePage() {
   const handleSaveEdit = async () => {
     if (!selectedMachine || !activeMachineData) return;
     setSaveStatus("saving");
+
+    // Auto-update power_alloc and power_cost in values before saving
+    const eqRow = equipmentRows.find(r => r.designation.toLowerCase() === selectedMachine.toLowerCase());
+    const power = eqRow ? parseFloat(eqRow.values.power || "0") : 0;
+    const powerFactor = eqRow ? parseFloat(eqRow.values.power_factor || "0") : 0;
+    const rangeValue = eqRow ? parseFloat(eqRow.values.range_value || "0") : 0;
+    const universalPowerVal = parseFloat(systemSettings.power_universal_value || "8") || 8;
+    const calculatedPowerCost = ((power * powerFactor) * rangeValue) / universalPowerVal;
+
+    const updatedValues = {
+      ...activeMachineData.values,
+      power_alloc: `${power} kW`,
+      power_cost: calculatedPowerCost.toFixed(3),
+      wiring_cost: hasWiringCost ? (activeMachineData.values.wiring_cost || "0") : "0"
+    };
+
     try {
       const response = await fetch(`${API_URL}/api/machine-hour-rate`, {
         method: "PUT",
@@ -746,7 +782,7 @@ export default function MachineHourRatePage() {
         },
         body: JSON.stringify({
           machine: selectedMachine,
-          values: activeMachineData.values
+          values: updatedValues
         })
       });
 
@@ -897,97 +933,102 @@ export default function MachineHourRatePage() {
 
   return (
     <DashboardLayout>
-      <div className="space-y-8 animate-in fade-in duration-500">
+      <div className="space-y-5 animate-in fade-in duration-500">
         
-        {/* Page Header */}
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <h1 className="text-3xl font-bold tracking-tight text-foreground flex items-center gap-2.5">
-              <Calculator className="h-8 w-8 text-primary" />
+        {/* Page Header & Selector Card */}
+        <div className="flex flex-col gap-4 md:flex-row md:items-center justify-between">
+          <div className="max-w-xl">
+            <h1 className="text-xl font-extrabold tracking-tight text-foreground flex items-center gap-2">
+              <Calculator className="h-5.5 w-5.5 text-primary" />
               Machine Hour Rate Sheet
             </h1>
-            <p className="text-muted-foreground mt-1 text-sm">
-              Select an equipment or machine to view its breakdown hourly operating cost, auto-fetched with live calculations.
+            <p className="text-muted-foreground mt-0.5 text-xs">
+              Select an equipment or machine to view its breakdown hourly operating cost.
             </p>
           </div>
           
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 self-start md:self-center">
+            {/* Dropdown & Controls Selector */}
+            <Card className="border-none shadow-md bg-card/60 backdrop-blur-md py-2 px-3.5 w-fit">
+              <div className="flex items-center gap-4">
+                <div className="flex flex-col gap-1">
+                  <Label htmlFor="machine-select" className="text-[9px] font-bold text-muted-foreground uppercase tracking-wider">
+                    Select Equipment / Machine
+                  </Label>
+                  <select
+                    id="machine-select"
+                    value={selectedMachine}
+                    disabled={isEditing}
+                    onChange={(e) => {
+                      isInitialLoad.current = true;
+                      setSelectedMachine(e.target.value);
+                    }}
+                    className="h-8 px-2 rounded-lg bg-background border border-input text-foreground font-bold shadow-sm focus:ring-1 focus:ring-primary outline-none cursor-pointer transition-all hover:bg-muted/10 text-xs disabled:opacity-50 disabled:cursor-not-allowed min-w-[180px]"
+                  >
+                    {machineOptions.map((m) => (
+                      <option key={m} value={m} className="bg-background text-foreground font-medium py-1">
+                        {m}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {isSuperAdmin && (
+                  <div className="flex items-center self-end mb-0.5">
+                    {!isEditing ? (
+                      <Button
+                        onClick={() => {
+                          setEditBackup(JSON.parse(JSON.stringify(activeMachineData)));
+                          setIsEditing(true);
+                        }}
+                        className="h-8 px-3 text-xs font-bold shadow-sm flex items-center gap-1"
+                      >
+                        <Edit className="h-3.5 w-3.5" />
+                        Edit Sheet
+                      </Button>
+                    ) : (
+                      <div className="flex items-center gap-1.5 animate-in fade-in zoom-in-95 duration-200">
+                        <Button
+                          onClick={handleSaveEdit}
+                          className="h-8 px-3 text-xs font-bold bg-green-600 hover:bg-green-700 text-white shadow-sm flex items-center gap-1"
+                          disabled={saveStatus === "saving"}
+                        >
+                          {saveStatus === "saving" ? (
+                            <>
+                              <Loader2 className="h-3 w-3 animate-spin" />
+                              Saving...
+                            </>
+                          ) : (
+                            <>
+                              <Save className="h-3 w-3" />
+                              Save
+                            </>
+                          )}
+                        </Button>
+                        <Button
+                          onClick={handleCancelEdit}
+                          variant="outline"
+                          className="h-8 px-3 text-xs font-bold shadow-sm flex items-center gap-1"
+                        >
+                          <X className="h-3 w-3" />
+                          Cancel
+                        </Button>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+
+            </Card>
+
             {!isSuperAdmin && (
-              <div className="flex items-center gap-2 bg-muted/60 border border-muted px-4 py-2.5 rounded-lg text-xs font-semibold text-muted-foreground">
-                <Info className="h-4 w-4 text-primary" />
-                Read-only: Contact Super Admin to save modifications.
+              <div className="flex items-center gap-2 bg-muted/60 border border-muted px-3 py-1.5 rounded-lg text-[10px] font-semibold text-muted-foreground whitespace-nowrap">
+                <Info className="h-3.5 w-3.5 text-primary" />
+                Read-only
               </div>
             )}
           </div>
         </div>
-
-        {/* Dropdown & Controls Selector */}
-        <Card className="border-none shadow-xl bg-card/60 backdrop-blur-md p-6">
-          <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
-            <div className="flex flex-col gap-2.5 max-w-sm w-full">
-              <Label htmlFor="machine-select" className="text-sm font-extrabold text-muted-foreground uppercase tracking-wider">
-                Select Equipment / Machine
-              </Label>
-              <select
-                id="machine-select"
-                value={selectedMachine}
-                disabled={isEditing}
-                onChange={(e) => {
-                  isInitialLoad.current = true;
-                  setSelectedMachine(e.target.value);
-                }}
-                className="h-12 px-4 rounded-xl bg-background border border-input text-foreground font-bold shadow-sm focus:ring-2 focus:ring-primary outline-none cursor-pointer transition-all hover:bg-muted/10 text-sm disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {machineOptions.map((m) => (
-                  <option key={m} value={m} className="bg-background text-foreground font-medium py-2">
-                    {m}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            {isSuperAdmin && (
-              <div className="flex items-center gap-3 self-end md:self-center">
-                {!isEditing ? (
-                  <Button
-                    onClick={() => {
-                      setEditBackup(JSON.parse(JSON.stringify(activeMachineData)));
-                      setIsEditing(true);
-                    }}
-                    className="h-11 px-6 font-bold shadow-lg"
-                  >
-                    Edit Sheet
-                  </Button>
-                ) : (
-                  <div className="flex items-center gap-3 animate-in fade-in zoom-in-95 duration-200">
-                    <Button
-                      onClick={handleSaveEdit}
-                      className="h-11 px-6 font-bold bg-green-600 hover:bg-green-700 text-white shadow-lg"
-                      disabled={saveStatus === "saving"}
-                    >
-                      {saveStatus === "saving" ? (
-                        <>
-                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                          Saving...
-                        </>
-                      ) : (
-                        "Save Changes"
-                      )}
-                    </Button>
-                    <Button
-                      onClick={handleCancelEdit}
-                      variant="outline"
-                      className="h-11 px-6 font-bold shadow-lg"
-                    >
-                      Cancel
-                    </Button>
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-
-        </Card>
 
         {/* Dynamic Calculator Spreadsheets */}
         <Card className="border-none shadow-2xl bg-card/60 backdrop-blur-md overflow-visible">
@@ -1010,26 +1051,26 @@ export default function MachineHourRatePage() {
                     <TableRow className="hover:bg-transparent">
                       <TableHead 
                         colSpan={5} 
-                        className="bg-[#bdd7ee] text-black font-extrabold text-base py-4 text-center border-b select-none uppercase tracking-widest"
+                        className="bg-[#bdd7ee] text-black font-extrabold text-sm py-2.5 text-center border-b select-none uppercase tracking-widest"
                       >
                         {selectedMachine} Machine Hour Cost - 2025
                       </TableHead>
                     </TableRow>
                     {/* Columns headers */}
                     <TableRow className="bg-muted/30 border-b hover:bg-transparent">
-                      <TableHead className="py-4 px-6 text-sm font-extrabold tracking-wider w-[100px] text-center border-r border-b bg-background text-foreground">
+                      <TableHead className="py-2.5 px-4 text-xs font-extrabold tracking-wider w-[80px] text-center border-r border-b bg-background text-foreground">
                         SI No
                       </TableHead>
-                      <TableHead className="py-4 px-6 text-sm font-extrabold tracking-wider text-left border-r border-b text-foreground min-w-[340px]">
+                      <TableHead className="py-2.5 px-4 text-xs font-extrabold tracking-wider text-left border-r border-b text-foreground min-w-[280px]">
                         Particulars
                       </TableHead>
-                      <TableHead className="py-4 px-6 text-sm font-extrabold tracking-wider text-left border-r border-b text-foreground w-[220px]">
+                      <TableHead className="py-2.5 px-4 text-xs font-extrabold tracking-wider text-left border-r border-b text-foreground w-[180px]">
                         Allocation / Detail
                       </TableHead>
-                      <TableHead className="py-4 px-6 text-sm font-extrabold tracking-wider text-left border-r border-b text-foreground w-[220px]">
+                      <TableHead className="py-2.5 px-4 text-xs font-extrabold tracking-wider text-left border-r border-b text-foreground w-[180px]">
                         Item Cost
                       </TableHead>
-                      <TableHead className="py-4 px-6 text-sm font-extrabold tracking-wider text-left border-b text-foreground w-[240px]">
+                      <TableHead className="py-2.5 px-4 text-xs font-extrabold tracking-wider text-left border-b text-foreground w-[200px]">
                         Cost / Hr (INR)
                       </TableHead>
                     </TableRow>
@@ -1039,19 +1080,22 @@ export default function MachineHourRatePage() {
                     
                      {/* 1. Depreciation & Interest */}
                      <TableRow className="hover:bg-muted/5 transition-colors">
-                       <TableCell className="py-3.5 px-6 text-center font-bold text-muted-foreground border-r border-b sticky left-0 z-10 bg-background text-sm">
+                       <TableCell className="py-2 px-4 text-center font-bold text-muted-foreground border-r border-b sticky left-0 z-10 bg-background text-xs">
                          1
                        </TableCell>
-                       <TableCell className="py-3.5 px-6 font-bold border-r border-b text-foreground text-sm">
+                       <TableCell 
+                         className="py-2 px-4 font-bold border-r border-b text-foreground text-xs cursor-help"
+                         title="Calculated depreciation & interest cost based on formula (Formula fetched from Salary Capital Charges Page (Equipments))"
+                       >
                          Depreciation & Interest
                        </TableCell>
-                       <TableCell className="py-3.5 px-6 font-mono text-muted-foreground border-r border-b bg-muted/5 font-semibold text-sm text-center">
+                       <TableCell className="py-2 px-4 font-mono text-muted-foreground border-r border-b bg-muted/5 font-semibold text-xs text-center">
                          -
                        </TableCell>
-                       <TableCell className="py-3.5 px-6 border-r border-b text-sm" />
+                       <TableCell className="py-2 px-4 border-r border-b text-xs" />
                        <TableCell 
                          className={cn(
-                           "py-3.5 px-6 font-mono font-bold text-foreground border-b text-sm text-right bg-muted/5 relative select-none group transition-all",
+                           "py-2 px-4 font-mono font-bold text-foreground border-b text-xs text-right bg-muted/5 relative select-none group transition-all cursor-help",
                            isEditing && "cursor-pointer hover:bg-primary/10"
                          )}
                          onDoubleClick={() => {
@@ -1074,12 +1118,12 @@ export default function MachineHourRatePage() {
                              setShowFormulaModal(true);
                            }
                          }}
-                         title={`Formula: ${activeMachineData?.values?.depreciation_formula || "[total]"}`}
+                         title={`Formula: ${activeMachineData?.values?.depreciation_formula || "[total]"} (Fetched from Salary Capital Charges Page (Equipments))`}
                        >
                          <div className="flex items-center justify-between gap-2">
                            {isEditing && (
-                             <span className="opacity-0 group-hover:opacity-100 text-[10px] text-primary font-bold transition-all shrink-0">
-                               ✎ Double-click to edit formula
+                             <span className="opacity-0 group-hover:opacity-100 text-primary transition-all shrink-0">
+                               <Edit className="h-3.5 w-3.5" />
                              </span>
                            )}
                            <span className="flex-1 text-right">
@@ -1091,12 +1135,13 @@ export default function MachineHourRatePage() {
 
                     {/* 2. Labour */}
                     <TableRow className="hover:bg-muted/5 transition-colors">
-                      <TableCell className="py-3.5 px-6 text-center font-bold text-muted-foreground border-r border-b sticky left-0 z-10 bg-background text-sm">
+                      <TableCell className="py-2 px-4 text-center font-bold text-muted-foreground border-r border-b sticky left-0 z-10 bg-background text-xs">
                         2
                       </TableCell>
                       <TableCell 
                         ref={dropdownRef}
-                        className="py-3.5 px-6 font-bold border-r border-b text-foreground text-sm cursor-pointer select-none relative"
+                        className="py-2 px-4 font-bold border-r border-b text-foreground text-xs cursor-help select-none relative"
+                        title="Fetched from Salary Capital Charges Page (Operators)"
                         onDoubleClick={() => {
                           if (isEditing) {
                             setShowLabourDropdown(prev => !prev);
@@ -1106,8 +1151,8 @@ export default function MachineHourRatePage() {
                         <div className="flex items-center justify-between">
                           <span>Labour</span>
                           {isEditing && (
-                            <span className="text-xs text-primary font-semibold flex items-center gap-1 bg-primary/10 px-2.5 py-1.5 rounded-lg border border-primary/20 hover:bg-primary/20 transition-colors">
-                              Double-click to select roles ▼
+                            <span className="text-[10px] text-primary font-semibold flex items-center gap-1 bg-primary/10 px-2 py-1 rounded-md border border-primary/20 hover:bg-primary/20 transition-colors">
+                              Select roles ▼
                             </span>
                           )}
                         </div>
@@ -1154,34 +1199,37 @@ export default function MachineHourRatePage() {
                           </div>
                         )}
                       </TableCell>
-                      <TableCell className="py-3.5 px-6 border-r border-b text-sm" />
-                      <TableCell className="py-3.5 px-6 border-r border-b text-sm" />
-                      <TableCell className="py-3.5 px-6 border-b text-sm" />
+                      <TableCell className="py-2 px-4 border-r border-b text-xs" />
+                      <TableCell className="py-2 px-4 border-r border-b text-xs" />
+                      <TableCell className="py-2 px-4 border-b text-xs" />
                     </TableRow>
 
                     {calculations.labourCosts.map((labour, index) => {
                       const letter = String.fromCharCode(97 + index); // a, b, c, d...
                       return (
                         <TableRow key={labour.designation} className="hover:bg-muted/5 transition-colors animate-in fade-in duration-200">
-                          <TableCell className="py-2.5 px-6 border-r border-b bg-background sticky left-0 z-10 text-sm" />
-                          <TableCell className="py-2.5 px-10 font-semibold text-muted-foreground border-r border-b text-sm">
+                          <TableCell className="py-1.5 px-4 border-r border-b bg-background sticky left-0 z-10 text-xs" />
+                          <TableCell 
+                            className="py-1.5 px-8 font-semibold text-muted-foreground border-r border-b text-xs cursor-help"
+                            title="Fetched from Salary Capital Charges Page (Operators)"
+                          >
                             {letter}) {labour.designation}
                           </TableCell>
-                          <TableCell className="p-1 border-r border-b">
+                          <TableCell className="p-0.5 border-r border-b">
                             <Input
                               type="text"
                               value={activeMachineData.values[labour.allocKey] || "0"}
                               readOnly={!isEditing}
                               onChange={(e) => handleValueChange(labour.allocKey, e.target.value)}
                               className={cn(
-                                "h-10 w-full bg-transparent border-none shadow-none rounded-none text-sm px-4 font-mono font-semibold transition-all focus-visible:ring-0 text-center",
-                                isEditing ? "hover:bg-muted/20 focus:bg-background focus:ring-1 focus:ring-primary rounded" : "cursor-default pointer-events-none"
+                                "h-8 w-full bg-transparent border-none shadow-none rounded-none text-xs px-3 font-mono font-semibold transition-all focus-visible:ring-0 text-center",
+                                isEditing ? "hover:bg-muted/20 focus:bg-background focus:ring-1 focus:ring-primary rounded" : "cursor-default pointer-events-none text-muted-foreground"
                               )}
                             />
                           </TableCell>
                           <TableCell 
                             className={cn(
-                              "py-2.5 px-6 font-mono font-semibold text-muted-foreground border-r border-b text-sm text-right relative select-none group transition-all",
+                              "py-1.5 px-4 font-mono font-semibold text-muted-foreground border-r border-b text-xs text-right relative select-none group transition-all cursor-help",
                               isEditing && "cursor-pointer hover:bg-primary/10"
                             )}
                             onDoubleClick={() => {
@@ -1208,8 +1256,8 @@ export default function MachineHourRatePage() {
                           >
                             <div className="flex items-center justify-between gap-2">
                               {isEditing && (
-                                <span className="opacity-0 group-hover:opacity-100 text-[10px] text-primary font-bold transition-all shrink-0">
-                                  ✎ Edit
+                                <span className="opacity-0 group-hover:opacity-100 text-primary transition-all shrink-0">
+                                  <Edit className="h-3.5 w-3.5" />
                                 </span>
                               )}
                               <span className="flex-1 text-right">
@@ -1217,69 +1265,76 @@ export default function MachineHourRatePage() {
                               </span>
                             </div>
                           </TableCell>
-                          <TableCell className="py-2.5 px-6 border-b text-sm" />
+                          <TableCell className="py-1.5 px-4 border-b text-xs" />
                         </TableRow>
                       );
                     })}
 
                     {/* Labour Subtotal Row */}
                     <TableRow className="hover:bg-transparent">
-                      <TableCell className="py-2.5 px-6 border-r border-b bg-background sticky left-0 z-10 text-sm" />
-                      <TableCell className="py-2.5 px-6 border-r border-b text-sm" />
-                      <TableCell className="py-2.5 px-6 border-r border-b text-sm bg-muted/5" />
-                      <TableCell className="py-2.5 px-6 border-r border-b text-sm" />
-                      <TableCell className="py-2.5 px-6 font-mono font-extrabold text-foreground border-b text-sm text-right bg-muted/20">
+                      <TableCell className="py-1.5 px-4 border-r border-b bg-background sticky left-0 z-10 text-xs" />
+                      <TableCell className="py-1.5 px-4 border-r border-b text-xs" />
+                      <TableCell className="py-1.5 px-4 border-r border-b text-xs bg-muted/5" />
+                      <TableCell className="py-1.5 px-4 border-r border-b text-xs" />
+                      <TableCell 
+                        className="py-1.5 px-4 font-mono font-extrabold text-foreground border-b text-xs text-right bg-muted/20 cursor-help"
+                        title="Formula: [Sum of all labor costs]"
+                      >
                         {calculations.labourSubtotal.toFixed(2)}
                       </TableCell>
                     </TableRow>
 
                     {/* 3. Power */}
                     <TableRow className="hover:bg-muted/5 transition-colors">
-                      <TableCell className="py-3.5 px-6 text-center font-bold text-muted-foreground border-r border-b sticky left-0 z-10 bg-background text-sm">
+                      <TableCell className="py-2 px-4 text-center font-bold text-muted-foreground border-r border-b sticky left-0 z-10 bg-background text-xs">
                         3
                       </TableCell>
-                      <TableCell className="py-3.5 px-6 font-bold border-r border-b text-foreground text-sm">
+                      <TableCell 
+                        className="py-2 px-4 font-bold border-r border-b text-foreground text-xs cursor-help"
+                        title="Fetched from Salary Capital Charges Page (Equipments)"
+                      >
                         Power
                       </TableCell>
-                      <TableCell className="p-1 border-r border-b">
+                      <TableCell 
+                        className="p-0.5 border-r border-b cursor-help"
+                        title="Fetched from Salary Capital Charges Page (Equipments)"
+                      >
                         <Input
                           type="text"
-                          value={activeMachineData.values.power_alloc || "0 KW"}
-                          readOnly={!isEditing}
-                          onChange={(e) => handleValueChange("power_alloc", e.target.value)}
-                          className={cn(
-                            "h-10 w-full bg-transparent border-none shadow-none rounded-none text-sm px-4 font-mono font-bold transition-all focus-visible:ring-0 text-center",
-                            isEditing ? "hover:bg-muted/20 focus:bg-background focus:ring-1 focus:ring-primary rounded" : "cursor-default pointer-events-none"
-                          )}
+                          value={(() => {
+                            const eqRow = equipmentRows.find(r => r.designation.toLowerCase() === selectedMachine.toLowerCase());
+                            const p = eqRow ? eqRow.values.power : "";
+                            return p ? `${p} kW` : "0 kW";
+                          })()}
+                          readOnly={true}
+                          className="h-8 w-full bg-transparent border-none shadow-none rounded-none text-xs px-3 font-mono font-bold transition-all focus-visible:ring-0 text-center cursor-default pointer-events-none text-muted-foreground"
                         />
                       </TableCell>
-                      <TableCell className="py-3.5 px-6 border-r border-b text-sm" />
-                      <TableCell className="p-1 border-b">
+                      <TableCell className="py-2 px-4 border-r border-b text-xs" />
+                      <TableCell 
+                        className="p-0.5 border-b cursor-help"
+                        title="Formula: ((Power * Power Factor) * Range Value) / Universal Power Value"
+                      >
                         <Input
-                          type="number"
-                          step="0.001"
-                          value={activeMachineData.values.power_cost || "0"}
-                          readOnly={!isEditing}
-                          onChange={(e) => handleValueChange("power_cost", e.target.value)}
-                          className={cn(
-                            "h-10 w-full bg-transparent border-none shadow-none rounded-none text-sm px-4 font-mono font-bold transition-all focus-visible:ring-0 text-right",
-                            isEditing ? "hover:bg-muted/20 focus:bg-background focus:ring-1 focus:ring-primary rounded" : "cursor-default pointer-events-none"
-                          )}
+                          type="text"
+                          value={calculations ? calculations.powerCost.toFixed(3) : "0.000"}
+                          readOnly={true}
+                          className="h-8 w-full bg-transparent border-none shadow-none rounded-none text-xs px-3 font-mono font-bold transition-all focus-visible:ring-0 text-right cursor-default pointer-events-none text-muted-foreground"
                         />
                       </TableCell>
                     </TableRow>
 
                     {/* 4. Consumables */}
                     <TableRow className="hover:bg-muted/5 transition-colors">
-                      <TableCell className="py-3.5 px-6 text-center font-bold text-muted-foreground border-r border-b sticky left-0 z-10 bg-background text-sm">
+                      <TableCell className="py-2 px-4 text-center font-bold text-muted-foreground border-r border-b sticky left-0 z-10 bg-background text-xs">
                         4
                       </TableCell>
-                      <TableCell className="py-3.5 px-6 font-bold border-r border-b text-foreground text-sm">
+                      <TableCell className="py-2 px-4 font-bold border-r border-b text-foreground text-xs">
                         Consumables
                       </TableCell>
-                      <TableCell className="py-3.5 px-6 border-r border-b text-sm" />
-                      <TableCell className="py-3.5 px-6 border-r border-b text-sm" />
-                      <TableCell className="p-1 border-b">
+                      <TableCell className="py-2 px-4 border-r border-b text-xs" />
+                      <TableCell className="py-2 px-4 border-r border-b text-xs" />
+                      <TableCell className="p-0.5 border-b">
                         <Input
                           type="number"
                           step="0.01"
@@ -1287,8 +1342,8 @@ export default function MachineHourRatePage() {
                           readOnly={!isEditing}
                           onChange={(e) => handleValueChange("consumables_cost", e.target.value)}
                           className={cn(
-                            "h-10 w-full bg-transparent border-none shadow-none rounded-none text-sm px-4 font-mono font-bold transition-all focus-visible:ring-0 text-right",
-                            isEditing ? "hover:bg-muted/20 focus:bg-background focus:ring-1 focus:ring-primary rounded" : "cursor-default pointer-events-none"
+                            "h-8 w-full bg-transparent border-none shadow-none rounded-none text-xs px-3 font-mono font-bold transition-all focus-visible:ring-0 text-right",
+                            isEditing ? "hover:bg-muted/20 focus:bg-background focus:ring-1 focus:ring-primary rounded" : "cursor-default pointer-events-none text-muted-foreground"
                           )}
                         />
                       </TableCell>
@@ -1296,15 +1351,15 @@ export default function MachineHourRatePage() {
 
                     {/* 5. Maintenance */}
                     <TableRow className="hover:bg-muted/5 transition-colors">
-                      <TableCell className="py-3.5 px-6 text-center font-bold text-muted-foreground border-r border-b sticky left-0 z-10 bg-background text-sm">
+                      <TableCell className="py-2 px-4 text-center font-bold text-muted-foreground border-r border-b sticky left-0 z-10 bg-background text-xs">
                         5
                       </TableCell>
-                      <TableCell className="py-3.5 px-6 font-bold border-r border-b text-foreground text-sm">
+                      <TableCell className="py-2 px-4 font-bold border-r border-b text-foreground text-xs">
                         Maintainance
                       </TableCell>
-                      <TableCell className="py-3.5 px-6 border-r border-b text-sm" />
-                      <TableCell className="py-3.5 px-6 border-r border-b text-sm" />
-                      <TableCell className="p-1 border-b">
+                      <TableCell className="py-2 px-4 border-r border-b text-xs" />
+                      <TableCell className="py-2 px-4 border-r border-b text-xs" />
+                      <TableCell className="p-0.5 border-b">
                         <Input
                           type="number"
                           step="0.01"
@@ -1312,8 +1367,8 @@ export default function MachineHourRatePage() {
                           readOnly={!isEditing}
                           onChange={(e) => handleValueChange("maintenance_cost", e.target.value)}
                           className={cn(
-                            "h-10 w-full bg-transparent border-none shadow-none rounded-none text-sm px-4 font-mono font-bold transition-all focus-visible:ring-0 text-right",
-                            isEditing ? "hover:bg-muted/20 focus:bg-background focus:ring-1 focus:ring-primary rounded" : "cursor-default pointer-events-none"
+                            "h-8 w-full bg-transparent border-none shadow-none rounded-none text-xs px-3 font-mono font-bold transition-all focus-visible:ring-0 text-right",
+                            isEditing ? "hover:bg-muted/20 focus:bg-background focus:ring-1 focus:ring-primary rounded" : "cursor-default pointer-events-none text-muted-foreground"
                           )}
                         />
                       </TableCell>
@@ -1321,15 +1376,15 @@ export default function MachineHourRatePage() {
 
                     {/* 6. Rent */}
                     <TableRow className="hover:bg-muted/5 transition-colors">
-                      <TableCell className="py-3.5 px-6 text-center font-bold text-muted-foreground border-r border-b sticky left-0 z-10 bg-background text-sm">
+                      <TableCell className="py-2 px-4 text-center font-bold text-muted-foreground border-r border-b sticky left-0 z-10 bg-background text-xs">
                         6
                       </TableCell>
-                      <TableCell className="py-3.5 px-6 font-bold border-r border-b text-foreground text-sm">
+                      <TableCell className="py-2 px-4 font-bold border-r border-b text-foreground text-xs">
                         Rent
                       </TableCell>
-                      <TableCell className="py-3.5 px-6 border-r border-b text-sm" />
-                      <TableCell className="py-3.5 px-6 border-r border-b text-sm" />
-                      <TableCell className="p-1 border-b">
+                      <TableCell className="py-2 px-4 border-r border-b text-xs" />
+                      <TableCell className="py-2 px-4 border-r border-b text-xs" />
+                      <TableCell className="p-0.5 border-b">
                         <Input
                           type="number"
                           step="0.01"
@@ -1337,8 +1392,8 @@ export default function MachineHourRatePage() {
                           readOnly={!isEditing}
                           onChange={(e) => handleValueChange("rent_cost", e.target.value)}
                           className={cn(
-                            "h-10 w-full bg-transparent border-none shadow-none rounded-none text-sm px-4 font-mono font-bold transition-all focus-visible:ring-0 text-right",
-                            isEditing ? "hover:bg-muted/20 focus:bg-background focus:ring-1 focus:ring-primary rounded" : "cursor-default pointer-events-none"
+                            "h-8 w-full bg-transparent border-none shadow-none rounded-none text-xs px-3 font-mono font-bold transition-all focus-visible:ring-0 text-right",
+                            isEditing ? "hover:bg-muted/20 focus:bg-background focus:ring-1 focus:ring-primary rounded" : "cursor-default pointer-events-none text-muted-foreground"
                           )}
                         />
                       </TableCell>
@@ -1347,15 +1402,15 @@ export default function MachineHourRatePage() {
                     {/* 6A. Power wiring cost (Conditional) */}
                     {hasWiringCost && (
                       <TableRow className="hover:bg-muted/5 transition-colors">
-                        <TableCell className="py-3.5 px-6 text-center font-bold text-muted-foreground border-r border-b sticky left-0 z-10 bg-background text-sm">
+                        <TableCell className="py-2 px-4 text-center font-bold text-muted-foreground border-r border-b sticky left-0 z-10 bg-background text-xs">
                           6A
                         </TableCell>
-                        <TableCell className="py-3.5 px-6 font-bold border-r border-b text-foreground text-sm">
+                        <TableCell className="py-2 px-4 font-bold border-r border-b text-foreground text-xs">
                           Power wiring cost
                         </TableCell>
-                        <TableCell className="py-3.5 px-6 border-r border-b text-sm" />
-                        <TableCell className="py-3.5 px-6 border-r border-b text-sm" />
-                        <TableCell className="p-1 border-b">
+                        <TableCell className="py-2 px-4 border-r border-b text-xs" />
+                        <TableCell className="py-2 px-4 border-r border-b text-xs" />
+                        <TableCell className="p-0.5 border-b">
                           <Input
                             type="number"
                             step="0.01"
@@ -1363,7 +1418,7 @@ export default function MachineHourRatePage() {
                             readOnly={!isEditing}
                             onChange={(e) => handleValueChange("wiring_cost", e.target.value)}
                             className={cn(
-                              "h-10 w-full bg-transparent border-none shadow-none rounded-none text-sm px-4 font-mono font-bold transition-all focus-visible:ring-0 text-right",
+                              "h-8 w-full bg-transparent border-none shadow-none rounded-none text-xs px-3 font-mono font-bold transition-all focus-visible:ring-0 text-right",
                               isEditing ? "hover:bg-muted/20 focus:bg-background focus:ring-1 focus:ring-primary rounded" : "cursor-default pointer-events-none"
                             )}
                           />
@@ -1377,20 +1432,20 @@ export default function MachineHourRatePage() {
                       return (
                         <TableRow key={row.id} className="hover:bg-muted/5 transition-colors group animate-in fade-in duration-200">
                           {/* SI No */}
-                          <TableCell className="py-2.5 px-6 text-center font-bold text-muted-foreground border-r border-b sticky left-0 z-10 bg-background text-sm">
+                          <TableCell className="py-1.5 px-4 text-center font-bold text-muted-foreground border-r border-b sticky left-0 z-10 bg-background text-xs">
                             {siNo}
                           </TableCell>
                           {/* Particulars (Name) */}
-                          <TableCell className="p-1 border-r border-b">
+                          <TableCell className="p-0.5 border-r border-b">
                             <div className="flex items-center gap-2">
                               {isEditing && (
                                 <button
                                   type="button"
                                   onClick={() => handleDeleteCustomRow(row.id)}
-                                  className="text-red-500 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950/30 p-1.5 rounded-lg transition-all shrink-0"
+                                  className="text-red-500 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950/30 p-1 rounded transition-all shrink-0"
                                   title="Delete Row"
                                 >
-                                  <Trash2 className="h-4 w-4" />
+                                  <Trash2 className="h-3.5 w-3.5" />
                                 </button>
                               )}
                               <Input
@@ -1399,14 +1454,14 @@ export default function MachineHourRatePage() {
                                 readOnly={!isEditing}
                                 onChange={(e) => handleCustomRowChange(row.id, "name", e.target.value)}
                                 className={cn(
-                                  "h-10 w-full bg-transparent border-none shadow-none rounded-none text-sm px-2 font-semibold transition-all focus-visible:ring-0 text-left",
+                                  "h-8 w-full bg-transparent border-none shadow-none rounded-none text-xs px-2 font-semibold transition-all focus-visible:ring-0 text-left",
                                   isEditing ? "hover:bg-muted/20 focus:bg-background focus:ring-1 focus:ring-primary rounded" : "cursor-default pointer-events-none"
                                 )}
                               />
                             </div>
                           </TableCell>
                           {/* Allocation / Detail */}
-                          <TableCell className="p-1 border-r border-b">
+                          <TableCell className="p-0.5 border-r border-b">
                             <Input
                               type="text"
                               value={row.alloc || ""}
@@ -1414,15 +1469,15 @@ export default function MachineHourRatePage() {
                               readOnly={!isEditing}
                               onChange={(e) => handleCustomRowChange(row.id, "alloc", e.target.value)}
                               className={cn(
-                                "h-10 w-full bg-transparent border-none shadow-none rounded-none text-sm px-4 font-mono font-bold transition-all focus-visible:ring-0 text-center",
-                                isEditing ? "hover:bg-muted/20 focus:bg-background focus:ring-1 focus:ring-primary rounded" : "cursor-default pointer-events-none"
+                                "h-8 w-full bg-transparent border-none shadow-none rounded-none text-xs px-3 font-mono font-bold transition-all focus-visible:ring-0 text-center",
+                                isEditing ? "hover:bg-muted/20 focus:bg-background focus:ring-1 focus:ring-primary rounded" : "cursor-default pointer-events-none text-muted-foreground"
                               )}
                             />
                           </TableCell>
                           {/* Item Cost (Column 4 - empty) */}
-                          <TableCell className="py-2.5 px-6 border-r border-b text-sm" />
+                          <TableCell className="py-1.5 px-4 border-r border-b text-xs" />
                           {/* Cost / Hr (Column 5) */}
-                          <TableCell className="p-1 border-b">
+                          <TableCell className="p-0.5 border-b">
                             <Input
                               type="number"
                               step="0.01"
@@ -1430,8 +1485,8 @@ export default function MachineHourRatePage() {
                               readOnly={!isEditing}
                               onChange={(e) => handleCustomRowChange(row.id, "cost", e.target.value)}
                               className={cn(
-                                "h-10 w-full bg-transparent border-none shadow-none rounded-none text-sm px-4 font-mono font-bold transition-all focus-visible:ring-0 text-right",
-                                isEditing ? "hover:bg-muted/20 focus:bg-background focus:ring-1 focus:ring-primary rounded" : "cursor-default pointer-events-none"
+                                "h-8 w-full bg-transparent border-none shadow-none rounded-none text-xs px-3 font-mono font-bold transition-all focus-visible:ring-0 text-right",
+                                isEditing ? "hover:bg-muted/20 focus:bg-background focus:ring-1 focus:ring-primary rounded" : "cursor-default pointer-events-none text-muted-foreground"
                               )}
                             />
                           </TableCell>
@@ -1445,11 +1500,11 @@ export default function MachineHourRatePage() {
                         onClick={handleAddCustomRow}
                         className="hover:bg-primary/5 transition-colors cursor-pointer border-dashed border-2 border-primary/30"
                       >
-                        <TableCell className="py-2.5 px-6 text-center font-extrabold text-primary sticky left-0 z-10 bg-background text-sm">
+                        <TableCell className="py-1.5 px-4 text-center font-extrabold text-primary sticky left-0 z-10 bg-background text-xs">
                           +
                         </TableCell>
-                        <TableCell className="py-2.5 px-6 font-bold text-primary text-sm" colSpan={4}>
-                          <span className="flex items-center justify-center gap-1.5 py-1">
+                        <TableCell className="py-1.5 px-4 font-bold text-primary text-xs" colSpan={4}>
+                          <span className="flex items-center justify-center gap-1.5 py-0.5">
                             + Add custom cost row
                           </span>
                         </TableCell>
@@ -1458,17 +1513,17 @@ export default function MachineHourRatePage() {
 
                     {/* TOTAL Machine Hr Rate */}
                     <TableRow className="hover:bg-muted/5 transition-colors bg-accent/20">
-                      <TableCell className="py-3.5 px-6 text-center font-bold text-muted-foreground border-r border-b sticky left-0 z-10 bg-background text-sm">
+                      <TableCell className="py-2.5 px-4 text-center font-bold text-muted-foreground border-r border-b sticky left-0 z-10 bg-background text-xs">
                         {7 + calculations.customRows.length}
                       </TableCell>
-                      <TableCell className="py-3.5 px-6 font-extrabold border-r border-b text-foreground uppercase tracking-wider text-sm">
+                      <TableCell className="py-2.5 px-4 font-extrabold border-r border-b text-foreground uppercase tracking-wider text-xs">
                         TOTAL Machine Hr Rate
                       </TableCell>
-                      <TableCell className="py-3.5 px-6 border-r border-b text-sm" />
-                      <TableCell className="py-3.5 px-6 border-r border-b text-sm" />
+                      <TableCell className="py-2.5 px-4 border-r border-b text-xs" />
+                      <TableCell className="py-2.5 px-4 border-r border-b text-xs" />
                       <TableCell 
                         className={cn(
-                          "py-3.5 px-6 font-mono font-black border-b text-foreground bg-accent/30 text-base text-right relative select-none group transition-all",
+                          "py-2.5 px-4 font-mono font-black border-b text-foreground bg-accent/30 text-sm text-right relative select-none group transition-all cursor-help",
                           isEditing && "cursor-pointer hover:bg-primary/10"
                         )}
                         onDoubleClick={() => {
@@ -1499,8 +1554,8 @@ export default function MachineHourRatePage() {
                       >
                         <div className="flex items-center justify-between gap-2">
                           {isEditing && (
-                            <span className="opacity-0 group-hover:opacity-100 text-[10px] text-primary font-bold transition-all shrink-0">
-                              ✎ Edit
+                            <span className="opacity-0 group-hover:opacity-100 text-primary transition-all shrink-0">
+                              <Edit className="h-3.5 w-3.5" />
                             </span>
                           )}
                           <span className="flex-1 text-right">
@@ -1512,28 +1567,28 @@ export default function MachineHourRatePage() {
 
                     {/* Add Utilisation Factor */}
                     <TableRow className="hover:bg-muted/5 transition-colors">
-                      <TableCell className="py-3.5 px-6 text-center font-extrabold text-foreground border-r border-b sticky left-0 z-10 bg-background text-sm">
+                      <TableCell className="py-2 px-4 text-center font-extrabold text-foreground border-r border-b sticky left-0 z-10 bg-background text-xs">
                         {8 + calculations.customRows.length}
                       </TableCell>
-                      <TableCell className="py-3.5 px-6 font-extrabold border-r border-b text-foreground text-sm">
+                      <TableCell className="py-2 px-4 font-extrabold border-r border-b text-foreground text-xs">
                         Add Utilisation Factor {calculations.utFactor}%
                       </TableCell>
-                      <TableCell className="p-1 border-r border-b">
+                      <TableCell className="p-0.5 border-r border-b">
                         <Input
                           type="number"
                           value={activeMachineData.values.utilisation_factor || "100"}
                           readOnly={!isEditing}
                           onChange={(e) => handleValueChange("utilisation_factor", e.target.value)}
                           className={cn(
-                            "h-10 w-full bg-transparent border-none shadow-none rounded-none text-sm px-4 font-mono font-bold transition-all focus-visible:ring-0 text-center",
+                            "h-8 w-full bg-transparent border-none shadow-none rounded-none text-xs px-3 font-mono font-bold transition-all focus-visible:ring-0 text-center",
                             isEditing ? "hover:bg-muted/20 focus:bg-background focus:ring-1 focus:ring-primary rounded" : "cursor-default pointer-events-none"
                           )}
                         />
                       </TableCell>
-                      <TableCell className="py-3.5 px-6 border-r border-b text-sm" />
+                      <TableCell className="py-2 px-4 border-r border-b text-xs" />
                       <TableCell 
                         className={cn(
-                          "py-3.5 px-6 font-mono font-black border-b text-foreground bg-[#fce4d6] text-base text-right relative select-none group transition-all",
+                          "py-2 px-4 font-mono font-black border-b text-foreground bg-[#fce4d6] text-sm text-right relative select-none group transition-all cursor-help",
                           isEditing && "cursor-pointer hover:bg-primary/10"
                         )}
                         onDoubleClick={() => {
@@ -1558,8 +1613,8 @@ export default function MachineHourRatePage() {
                       >
                         <div className="flex items-center justify-between gap-2">
                           {isEditing && (
-                            <span className="opacity-0 group-hover:opacity-100 text-[10px] text-primary font-bold transition-all shrink-0">
-                              ✎ Edit
+                            <span className="opacity-0 group-hover:opacity-100 text-primary transition-all shrink-0">
+                              <Edit className="h-3.5 w-3.5" />
                             </span>
                           )}
                           <span className="flex-1 text-right">
@@ -1571,17 +1626,17 @@ export default function MachineHourRatePage() {
 
                     {/* Machine Cost / seconds */}
                     <TableRow className="hover:bg-muted/5 transition-colors bg-primary/10">
-                      <TableCell className="py-3.5 px-6 text-center font-extrabold text-foreground border-r border-b sticky left-0 z-10 bg-background text-sm">
+                      <TableCell className="py-2 px-4 text-center font-extrabold text-foreground border-r border-b sticky left-0 z-10 bg-background text-xs">
                         {9 + calculations.customRows.length}
                       </TableCell>
-                      <TableCell className="py-3.5 px-6 font-extrabold border-r border-b text-foreground uppercase tracking-wider text-sm">
+                      <TableCell className="py-2 px-4 font-extrabold border-r border-b text-foreground uppercase tracking-wider text-xs">
                         Machine Cost / seconds
                       </TableCell>
-                      <TableCell className="py-3.5 px-6 border-r border-b text-sm" />
-                      <TableCell className="py-3.5 px-6 border-r border-b text-sm" />
+                      <TableCell className="py-2 px-4 border-r border-b text-xs" />
+                      <TableCell className="py-2 px-4 border-r border-b text-xs" />
                       <TableCell 
                         className={cn(
-                          "py-3.5 px-6 font-mono font-black border-b text-foreground text-base text-right relative select-none group transition-all",
+                          "py-2 px-4 font-mono font-black border-b text-foreground text-sm text-right relative select-none group transition-all cursor-help",
                           isEditing && "cursor-pointer hover:bg-primary/10"
                         )}
                         onDoubleClick={() => {
@@ -1605,8 +1660,8 @@ export default function MachineHourRatePage() {
                       >
                         <div className="flex items-center justify-between gap-2">
                           {isEditing && (
-                            <span className="opacity-0 group-hover:opacity-100 text-[10px] text-primary font-bold transition-all shrink-0">
-                              ✎ Edit
+                            <span className="opacity-0 group-hover:opacity-100 text-primary transition-all shrink-0">
+                              <Edit className="h-3.5 w-3.5" />
                             </span>
                           )}
                           <span className="flex-1 text-right">

@@ -29,8 +29,7 @@ export const DashboardLayout = ({
         pathname !== "/settings" && 
         pathname !== "/machines" && 
         !pathname.startsWith("/machines/") &&
-        pathname !== "/operators" &&
-        pathname !== "/equipments" &&
+        pathname !== "/salary-capital-charges" &&
         pathname !== "/machine-hour-rate"
       ) {
         router.push("/");

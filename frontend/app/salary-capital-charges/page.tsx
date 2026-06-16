@@ -6,7 +6,7 @@ import { DashboardLayout } from "@/src/components/layout/DashboardLayout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -16,22 +16,26 @@ import {
   Plus, 
   Trash2, 
   Loader2, 
-  Save, 
-  RotateCcw, 
   Settings2, 
-  Sparkles,
   HelpCircle,
   AlertTriangle,
   ArrowLeft,
   ArrowRight,
-  ShieldAlert,
   Info,
   Edit2,
   Check,
-  X
+  X,
+  Zap
 } from "lucide-react";
 import { API_URL } from "@/src/lib/api";
 import { cn } from "@/lib/utils";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 interface Column {
   _id?: string;
@@ -44,18 +48,24 @@ interface Column {
 
 interface Row {
   _id?: string;
-  designation: string;
+  designation: string; // Mapping name as 'designation' for 100% component compatibility
   values: Record<string, string>;
 }
 
-export default function OperatorsPage() {
+export default function SalaryCapitalChargesPage() {
   const { user: currentUser } = useAuth();
+  const [activeTab, setActiveTab] = useState<"operators" | "equipments">("operators");
   const [columns, setColumns] = useState<Column[]>([]);
   const [rows, setRows] = useState<Row[]>([]);
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
   const [saveStatus, setSaveStatus] = useState<"idle" | "waiting" | "saving" | "saved" | "error">("idle");
   const isInitialLoad = useRef(true);
+
+  // Universal Power Value states (used in equipments tab)
+  const [universalPowerValue, setUniversalPowerValue] = useState("8");
+  const [isEditingPowerVal, setIsEditingPowerVal] = useState(false);
+  const [powerValBackup, setPowerValBackup] = useState("8");
+  const [savingPowerVal, setSavingPowerVal] = useState(false);
 
   // Row adding modal state
   const [rowModalOpen, setRowModalOpen] = useState(false);
@@ -83,10 +93,35 @@ export default function OperatorsPage() {
   const [activeColumnActionsKey, setActiveColumnActionsKey] = useState<string | null>(null);
 
   const isSuperAdmin = currentUser?.role === "super-admin";
+  const isOperators = activeTab === "operators";
+
+  const config = {
+    title: isOperators ? "Operators Salary Configuration" : "CNC VMC & Metrology Equipment Investment",
+    description: isOperators 
+      ? "Configure salary formulas, allowances, deductions, and designations in an interactive grid."
+      : "Configure machine costs, depreciation rates, interest rates, and equipment models in an interactive grid.",
+    addButtonLabel: isOperators ? "Add Designation" : "Add Machine",
+    rowLabel: isOperators ? "Designation / Role Name" : "Machine / Equipment Name",
+    rowPlaceholder: isOperators ? "e.g. Lead Operator, Technician" : "e.g. Grinding CLG 5020, Drilling",
+    addDialogTitle: isOperators ? "Add New Designation" : "Add New Machine",
+    addDialogDesc: isOperators 
+      ? "Enter the designation name and starting values for this role."
+      : "Enter the machine name and starting values for this model.",
+    deleteTitle: isOperators ? "Delete Designation Row" : "Delete Machine Row",
+    deleteDesc: (name: string) => isOperators 
+      ? `Are you sure you want to delete the designation "${name}"? This action is permanent and all calculations will be deleted.`
+      : `Are you sure you want to delete the machine "${name}"? This action is permanent and all calculations will be deleted.`,
+    editWarningTitle: isOperators ? "Save Designation Changes" : "Save Machine Changes",
+    editWarningDesc: (name: string) => `Are you sure you want to save the changes for "${name}"?`,
+    editRowTooltip: isOperators ? "Edit Designation" : "Edit Machine",
+    deleteRowTooltip: isOperators ? "Delete Designation" : "Delete Machine",
+  };
 
   const fetchTableData = async () => {
+    setLoading(true);
     try {
-      const response = await fetch(`${API_URL}/api/operator-table`, {
+      const endpoint = isOperators ? "/api/operator-table" : "/api/equipment-table";
+      const response = await fetch(`${API_URL}${endpoint}`, {
         headers: {
           Authorization: `Bearer ${currentUser?.token}`,
         },
@@ -110,14 +145,59 @@ export default function OperatorsPage() {
           };
         });
         setRows(formattedRows);
+
+        if (!isOperators) {
+          // Fetch system settings
+          const settingsResponse = await fetch(`${API_URL}/api/system-settings`, {
+            headers: {
+              Authorization: `Bearer ${currentUser?.token}`,
+            },
+          });
+          if (settingsResponse.ok) {
+            const settingsData = await settingsResponse.json();
+            if (settingsData.power_universal_value) {
+              setUniversalPowerValue(settingsData.power_universal_value);
+            }
+          }
+        }
       } else {
-        toast.error(data.message || "Failed to fetch operator table configurations");
+        toast.error(data.message || `Failed to fetch ${activeTab} configurations`);
       }
     } catch (error) {
-      console.error("Error fetching operator data:", error);
+      console.error(`Error fetching ${activeTab} data:`, error);
       toast.error("An error occurred while loading the table");
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleSavePowerVal = async () => {
+    setSavingPowerVal(true);
+    try {
+      const res = await fetch(`${API_URL}/api/system-settings`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${currentUser?.token}`,
+        },
+        body: JSON.stringify({
+          key: "power_universal_value",
+          value: universalPowerValue,
+        }),
+      });
+
+      if (res.ok) {
+        toast.success("Universal Power Value updated successfully");
+        setIsEditingPowerVal(false);
+      } else {
+        const data = await res.json();
+        toast.error(data.message || "Failed to update power value");
+      }
+    } catch (err) {
+      console.error("Error saving power value:", err);
+      toast.error("An error occurred. Please try again.");
+    } finally {
+      setSavingPowerVal(false);
     }
   };
 
@@ -125,7 +205,7 @@ export default function OperatorsPage() {
     if (currentUser) {
       fetchTableData();
     }
-  }, [currentUser]);
+  }, [currentUser, activeTab]);
 
   // Evaluates formula columns in topological dependency order (iterative evaluation)
   const evaluatedRows = useMemo(() => {
@@ -154,7 +234,7 @@ export default function OperatorsPage() {
         for (const col of formulaCols) {
           if (resolved[col.key] !== undefined) continue; // Already resolved
 
-          // Find variable references like [basic]
+          // Find variable references like [basic] or [mc_cost]
           const matches = col.formula.match(/\[([^\]]+)\]/g) || [];
           const allResolved = matches.every((match) => {
             const varKey = match.slice(1, -1);
@@ -246,15 +326,15 @@ export default function OperatorsPage() {
     setRowModalOpen(true);
   };
 
-  // Add new designation row
+  // Add new designation/machine row
   const handleAddRow = () => {
     if (!newDesignation.trim()) {
-      toast.error("Designation name is required");
+      toast.error(`${isOperators ? "Designation" : "Machine"} name is required`);
       return;
     }
 
     if (rows.some((r) => r.designation.toLowerCase() === newDesignation.trim().toLowerCase())) {
-      toast.error("A designation with this name already exists");
+      toast.error(`A ${isOperators ? "designation" : "machine"} with this name already exists`);
       return;
     }
 
@@ -274,7 +354,7 @@ export default function OperatorsPage() {
     
     setRows([...rows, newRow]);
     setRowModalOpen(false);
-    toast.success(`Added designation "${newDesignation.trim()}"`);
+    toast.success(`Added ${isOperators ? "designation" : "machine"} "${newDesignation.trim()}"`);
   };
 
   // Confirmation request helper
@@ -308,19 +388,19 @@ export default function OperatorsPage() {
   const handleSaveRowInline = (rowIndex: number) => {
     const row = rows[rowIndex];
     if (!row.designation.trim()) {
-      toast.error("Designation name is required");
+      toast.error(`${isOperators ? "Designation" : "Machine"} name is required`);
       return;
     }
 
     const exists = rows.some((r, i) => i !== rowIndex && r.designation.toLowerCase() === row.designation.trim().toLowerCase());
     if (exists) {
-      toast.error("A designation with this name already exists");
+      toast.error(`A ${isOperators ? "designation" : "machine"} with this name already exists`);
       return;
     }
 
     requestConfirmation(
-      "Save Designation Changes",
-      `Are you sure you want to save the changes for "${row.designation.trim()}"?`,
+      config.editWarningTitle,
+      config.editWarningDesc(row.designation.trim()),
       "Save",
       () => {
         const updatedRows = [...rows];
@@ -328,16 +408,16 @@ export default function OperatorsPage() {
         setRows(updatedRows);
         setEditingRowIndex(null);
         setBackupRow(null);
-        toast.success(`Designation "${row.designation.trim()}" updated`);
+        toast.success(`${isOperators ? "Designation" : "Machine"} "${row.designation.trim()}" updated`);
       }
     );
   };
 
-  // Delete designation row
+  // Delete designation/machine row
   const handleDeleteRow = (index: number) => {
     requestConfirmation(
-      "Delete Designation Row",
-      `Are you sure you want to delete the designation "${rows[index].designation}"? This action is permanent and all calculations will be deleted.`,
+      config.deleteTitle,
+      config.deleteDesc(rows[index].designation),
       "Delete Row",
       () => {
         if (editingRowIndex === index) {
@@ -348,7 +428,7 @@ export default function OperatorsPage() {
         }
         const newRows = rows.filter((_, i) => i !== index);
         setRows(newRows);
-        toast.info("Designation row removed.");
+        toast.info(`${isOperators ? "Designation" : "Machine"} row removed.`);
       }
     );
   };
@@ -441,7 +521,7 @@ export default function OperatorsPage() {
   // Delete Column
   const handleDeleteColumn = (colKey: string) => {
     if (colKey === "designation") {
-      toast.error("Cannot delete Designation column");
+      toast.error(`Cannot delete ${isOperators ? "Designation" : "Machine"} column`);
       return;
     }
 
@@ -467,7 +547,6 @@ export default function OperatorsPage() {
     );
   };
 
-
   // Move Column Left/Right
   const moveColumn = (index: number, direction: "left" | "right") => {
     if (index <= 0) return; // Ignore designation
@@ -479,6 +558,16 @@ export default function OperatorsPage() {
     updatedCols[index] = updatedCols[newIndex];
     updatedCols[newIndex] = temp;
     setColumns(updatedCols);
+  };
+
+  // Handle Tab Switch (set isInitialLoad to true to prevent auto-saves on mounting)
+  const handleTabChange = (val: "operators" | "equipments") => {
+    if (val === activeTab) return;
+    setEditingRowIndex(null);
+    setBackupRow(null);
+    setIsEditingPowerVal(false);
+    isInitialLoad.current = true;
+    setActiveTab(val);
   };
 
   // Debounced Auto-Save Effect
@@ -496,7 +585,8 @@ export default function OperatorsPage() {
     const timer = setTimeout(async () => {
       setSaveStatus("saving");
       try {
-        const response = await fetch(`${API_URL}/api/operator-table`, {
+        const endpoint = isOperators ? "/api/operator-table" : "/api/equipment-table";
+        const response = await fetch(`${API_URL}${endpoint}`, {
           method: "PUT",
           headers: {
             "Content-Type": "application/json",
@@ -521,52 +611,63 @@ export default function OperatorsPage() {
     }, 1500); // 1.5 seconds debounce
 
     return () => clearTimeout(timer);
-  }, [columns, rows, loading, currentUser, isSuperAdmin]);
-
+  }, [columns, rows, loading, currentUser, isSuperAdmin, activeTab, isOperators]);
 
   return (
     <DashboardLayout>
-      <div className="space-y-8 animate-in fade-in duration-500">
+      <div className="space-y-5 animate-in fade-in duration-500">
         
         {/* Page Header */}
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <h1 className="text-3xl font-bold tracking-tight text-foreground flex items-center gap-2.5">
-              <Calculator className="h-8 w-8 text-primary" />
-              Operators Payroll Sheet
+            <h1 className="text-xl font-extrabold tracking-tight text-foreground flex items-center gap-2">
+              <Calculator className="h-5.5 w-5.5 text-primary" />
+              Salary & Capital Charges
             </h1>
-            <p className="text-muted-foreground mt-1">
-              Configure salary formulas, allowances, deductions, and designations in an interactive grid.
+            <p className="text-muted-foreground mt-0.5 text-xs">
+              Configure payroll parameters and capital investment tables using an interactive spreadsheet layout.
             </p>
           </div>
           
-          <div className="flex flex-wrap items-center gap-3">
+          <div className="flex flex-wrap items-center gap-2">
+            {/* Tab Selector Dropdown in premium inline button style */}
+            <Select value={activeTab} onValueChange={handleTabChange}>
+              <SelectTrigger className="h-8 w-fit gap-2 bg-card border border-muted hover:bg-muted/15 font-bold shadow-sm focus:ring-1 focus:ring-primary rounded-xl px-3 text-xs select-none">
+                <span className="text-[10px] font-extrabold text-muted-foreground uppercase tracking-wider select-none shrink-0">Select Sheet:</span>
+                <span className="text-foreground font-extrabold text-xs select-none mr-1">
+                  <SelectValue placeholder="Select Sheet" />
+                </span>
+              </SelectTrigger>
+              <SelectContent className="bg-popover border shadow-lg rounded-lg">
+                <SelectItem value="operators" className="text-xs font-semibold">Operators</SelectItem>
+                <SelectItem value="equipments" className="text-xs font-semibold">Equipments</SelectItem>
+              </SelectContent>
+            </Select>
+
             {isSuperAdmin && (
               <>
-
-
                 <Button
                   onClick={handleOpenRowModal}
                   variant="outline"
-                  className="h-11 hover:bg-primary/5 font-semibold gap-2"
+                  className="h-8 px-3 hover:bg-primary/5 text-xs font-semibold gap-1.5"
                 >
-                  <Plus className="h-4 w-4 text-primary" />
-                  Add Designation
+                  <Plus className="h-3.5 w-3.5 text-primary" />
+                  {config.addButtonLabel}
                 </Button>
 
                 <Button
                   onClick={() => handleOpenColumnModal()}
                   variant="outline"
-                  className="h-11 hover:bg-primary/5 font-semibold gap-2"
+                  className="h-8 px-3 hover:bg-primary/5 text-xs font-semibold gap-1.5"
                 >
-                  <Plus className="h-4 w-4 text-primary" />
+                  <Plus className="h-3.5 w-3.5 text-primary" />
                   Add Column
                 </Button>
               </>
             )}
             {!isSuperAdmin && (
-              <div className="flex items-center gap-2 bg-muted/60 border border-muted px-4 py-2.5 rounded-lg text-xs font-semibold text-muted-foreground">
-                <Info className="h-4 w-4 text-primary" />
+              <div className="flex items-center gap-1.5 bg-muted/60 border border-muted px-3 py-1.5 rounded-md text-[10px] font-semibold text-muted-foreground">
+                <Info className="h-3.5 w-3.5 text-primary" />
                 Read-only: Contact Super Admin to save modifications.
               </div>
             )}
@@ -575,7 +676,6 @@ export default function OperatorsPage() {
 
         {/* Main Grid Card */}
         <Card className="border-none shadow-2xl bg-card/60 backdrop-blur-md overflow-hidden">
-
           <CardContent className="p-0">
             {loading ? (
               <div className="flex h-72 items-center justify-center">
@@ -593,12 +693,13 @@ export default function OperatorsPage() {
                   <TableHeader className="bg-muted/30">
                     {/* Primary Header Row */}
                     <TableRow className="border-b hover:bg-transparent">
-                      <TableHead className="py-4 px-2 text-xs font-extrabold tracking-wider w-[64px] min-w-[64px] max-w-[64px] text-center border-r border-b sticky left-0 z-30 bg-background">
+                      <TableHead className="py-2.5 px-2 text-xs font-extrabold tracking-wider w-[64px] min-w-[64px] max-w-[64px] text-center border-r border-b sticky left-0 z-30 bg-background">
                         Sl No
                       </TableHead>
                       {columns.map((col, index) => {
                         const isDesignation = col.key === "designation";
                         const showActions = isSuperAdmin && !isDesignation;
+                        const isFormula = col.type === "formula";
 
                         const headerCell = (
                           <TableHead 
@@ -609,15 +710,20 @@ export default function OperatorsPage() {
                               }
                             }}
                             className={cn(
-                              "py-4 px-4 text-xs font-extrabold tracking-wider border-r border-b relative text-foreground select-none cursor-default",
+                              "py-2.5 px-4 text-xs font-extrabold tracking-wider border-r border-b relative text-foreground select-none cursor-default",
                               isDesignation 
                                 ? "w-[180px] min-w-[180px] max-w-[180px] sticky left-[64px] z-30 bg-background" 
                                 : "min-w-[120px]",
-                              showActions && "hover:bg-muted/10 cursor-pointer transition-colors"
+                              showActions && "hover:bg-muted/10 cursor-pointer transition-colors",
+                              isFormula && "cursor-help bg-primary/5"
                             )}
-                            title={showActions ? "Double-click to configure column" : undefined}
+                            title={
+                              isFormula 
+                                ? `Formula: ${col.formula}${showActions ? " (Double-click to configure)" : ""}`
+                                : (showActions ? "Double-click to configure column" : undefined)
+                            }
                           >
-                            <span className="truncate" title={col.name}>{col.name}</span>
+                            <span className="truncate font-bold" title={col.name}>{isDesignation && !isOperators ? "Machine" : col.name}</span>
                           </TableHead>
                         );
 
@@ -696,15 +802,15 @@ export default function OperatorsPage() {
                         return headerCell;
                       })}
                       {isSuperAdmin && (
-                        <TableHead className="py-4 px-4 text-xs font-bold tracking-wider w-20 text-center border-b">
+                        <TableHead className="py-2.5 px-4 text-xs font-bold tracking-wider w-20 text-center border-b">
                           Actions
                         </TableHead>
                       )}
                     </TableRow>
 
-                    {/* Secondary Meta Row (e.g. 4.75%, 13.10% etc.) */}
-                    <TableRow className="hover:bg-transparent h-10">
-                      <TableHead className="py-1 px-2 text-center border-r border-b font-mono text-xs text-muted-foreground bg-background sticky left-0 z-30 w-[64px] min-w-[64px] max-w-[64px]">
+                    {/* Secondary Meta Row */}
+                    <TableRow className="hover:bg-transparent h-8">
+                      <TableHead className="py-0.5 px-2 text-center border-r border-b font-mono text-xs text-muted-foreground bg-background sticky left-0 z-30 w-[64px] min-w-[64px] max-w-[64px]">
                         -
                       </TableHead>
                       {columns.map((col) => {
@@ -713,7 +819,7 @@ export default function OperatorsPage() {
                           <TableHead 
                             key={`meta-${col.key}`} 
                             className={cn(
-                              "py-1 px-4 text-left border-r border-b font-mono text-[11px] font-bold text-primary/80 uppercase tracking-wider bg-muted/5",
+                              "py-0.5 px-4 text-left border-r border-b font-mono text-[10px] font-bold text-primary/80 uppercase tracking-wider bg-muted/5",
                               isDesignation && "sticky left-[64px] z-30 bg-background w-[180px] min-w-[180px] max-w-[180px]"
                             )}
                           >
@@ -722,7 +828,7 @@ export default function OperatorsPage() {
                         );
                       })}
                       {isSuperAdmin && (
-                        <TableHead className="py-1 px-4 text-center bg-muted/5 border-b">
+                        <TableHead className="py-0.5 px-4 text-center bg-muted/5 border-b">
                           -
                         </TableHead>
                       )}
@@ -732,8 +838,8 @@ export default function OperatorsPage() {
                   <TableBody>
                     {evaluatedRows.length === 0 ? (
                       <TableRow>
-                        <TableCell colSpan={columns.length + (isSuperAdmin ? 2 : 1)} className="h-32 text-center text-muted-foreground font-medium border-b">
-                          No rows added yet. Add a role/designation below.
+                        <TableCell colSpan={columns.length + (isSuperAdmin ? 2 : 1)} className="h-32 text-center text-muted-foreground font-medium border-b text-xs">
+                          No {isOperators ? "designations" : "machines"} added yet. Add a row below.
                         </TableCell>
                       </TableRow>
                     ) : (
@@ -743,7 +849,7 @@ export default function OperatorsPage() {
                           className="hover:bg-muted/10 transition-colors group/row"
                         >
                           {/* SI No */}
-                          <TableCell className="py-3 px-2 text-center font-bold text-muted-foreground border-r border-b bg-background sticky left-0 z-10 w-[64px] min-w-[64px] max-w-[64px] select-none text-xs">
+                          <TableCell className="py-2 px-2 text-center font-bold text-muted-foreground border-r border-b bg-background sticky left-0 z-10 w-[64px] min-w-[64px] max-w-[64px] select-none text-xs">
                             {rowIndex + 1}
                           </TableCell>
 
@@ -758,26 +864,27 @@ export default function OperatorsPage() {
                                 key={col.key} 
                                 className={cn(
                                   "p-1 border-r border-b relative font-medium",
-                                  isFormula ? "bg-muted/20 text-muted-foreground font-mono text-sm" : "text-foreground",
+                                  isFormula ? "bg-muted/20 text-muted-foreground font-mono text-xs cursor-help" : "text-foreground",
                                   isDesignation && "sticky left-[64px] z-10 bg-background w-[180px] min-w-[180px] max-w-[180px]"
                                 )}
                               >
                                 {isFormula ? (
-                                  <div className="h-10 px-3 flex items-center justify-start text-sm select-none" title={`Formula: ${col.formula}`}>
+                                  <div className="h-8 px-3 flex items-center justify-start text-xs select-none cursor-help font-mono font-semibold" title={`Formula: ${col.formula}`}>
                                     {cellValue}
                                   </div>
                                 ) : (
                                   <Input
                                     type={isDesignation ? "text" : "number"}
+                                    step={isDesignation ? undefined : "any"}
                                     value={cellValue}
                                     readOnly={editingRowIndex !== rowIndex}
                                     onChange={(e) => handleCellChange(rowIndex, col.key, e.target.value)}
                                     placeholder="0"
                                     className={cn(
-                                      "h-10 w-full bg-transparent border-none shadow-none rounded-none text-sm px-3 font-semibold transition-all focus-visible:ring-0",
+                                      "h-8 w-full bg-transparent border-none shadow-none rounded-none text-xs px-3 font-semibold transition-all focus-visible:ring-0",
                                       isDesignation ? "font-bold text-foreground text-left" : "font-mono text-left",
                                       editingRowIndex === rowIndex 
-                                        ? "bg-background border rounded border-input ring-1 ring-primary/20 pointer-events-auto" 
+                                        ? "bg-background border rounded border-input ring-1 ring-primary/20 pointer-events-auto cursor-text" 
                                         : "cursor-default select-none pointer-events-none"
                                     )}
                                   />
@@ -789,14 +896,14 @@ export default function OperatorsPage() {
                           {/* Row Actions */}
                           {isSuperAdmin && (
                             <TableCell className="p-1 text-center border-b">
-                              <div className="flex items-center justify-center gap-1.5">
+                              <div className="flex items-center justify-center gap-1">
                                 {editingRowIndex === rowIndex ? (
                                   <>
                                     <Button
                                       variant="ghost"
                                       size="icon"
                                       onClick={() => handleSaveRowInline(rowIndex)}
-                                      className="h-9 w-9 text-success hover:text-success hover:bg-success/10 transition-colors"
+                                      className="h-8 w-8 text-success hover:text-success hover:bg-success/10 transition-colors"
                                       title="Save Row Changes"
                                     >
                                       <Check className="h-4 w-4" />
@@ -805,7 +912,7 @@ export default function OperatorsPage() {
                                       variant="ghost"
                                       size="icon"
                                       onClick={() => handleCancelEditRow(rowIndex)}
-                                      className="h-9 w-9 text-destructive hover:text-destructive hover:bg-destructive/10 transition-colors"
+                                      className="h-8 w-8 text-destructive hover:text-destructive hover:bg-destructive/10 transition-colors"
                                       title="Cancel Editing"
                                     >
                                       <X className="h-4 w-4" />
@@ -817,21 +924,21 @@ export default function OperatorsPage() {
                                       variant="ghost"
                                       size="icon"
                                       onClick={() => handleStartEditRow(rowIndex)}
-                                      className="h-9 w-9 text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors"
-                                      title="Edit Designation"
+                                      className="h-8 w-8 text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors"
+                                      title={config.editRowTooltip}
                                       disabled={editingRowIndex !== null}
                                     >
-                                      <Edit2 className="h-4 w-4" />
+                                      <Edit2 className="h-3.5 w-3.5" />
                                     </Button>
                                     <Button
                                       variant="ghost"
                                       size="icon"
                                       onClick={() => handleDeleteRow(rowIndex)}
-                                      className="h-9 w-9 text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
-                                      title="Delete Designation"
+                                      className="h-8 w-8 text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
+                                      title={config.deleteRowTooltip}
                                       disabled={editingRowIndex !== null}
                                     >
-                                      <Trash2 className="h-4 w-4" />
+                                      <Trash2 className="h-3.5 w-3.5" />
                                     </Button>
                                   </>
                                 )}
@@ -846,15 +953,86 @@ export default function OperatorsPage() {
               </div>
             )}
           </CardContent>
-          
-
         </Card>
+
+        {/* Universal Power Value Small Widget (Only rendered on Equipments tab) */}
+        {!isOperators && !loading && columns.length > 0 && (
+          <div className="flex justify-end mt-4">
+            <div className="flex flex-wrap items-center gap-3 bg-card/60 backdrop-blur-md px-4 py-1.5 rounded-xl border border-muted w-fit text-xs">
+              <div className="flex items-center gap-1.5 font-bold text-foreground">
+                <Zap className="h-4 w-4 text-primary animate-pulse" />
+                <span>Universal Power Value:</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <Input
+                  type="number"
+                  step="any"
+                  value={universalPowerValue}
+                  onChange={(e) => setUniversalPowerValue(e.target.value)}
+                  readOnly={!isEditingPowerVal}
+                  className={cn(
+                    "h-7 w-16 bg-background border text-center font-bold px-1 rounded-lg focus-visible:ring-1 focus-visible:ring-primary text-xs",
+                    !isEditingPowerVal ? "cursor-default select-none pointer-events-none bg-muted/40 border-none shadow-none text-muted-foreground" : "text-primary"
+                  )}
+                />
+                {isSuperAdmin && (
+                  <div className="flex items-center gap-1">
+                    {!isEditingPowerVal ? (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => {
+                          setIsEditingPowerVal(true);
+                          setPowerValBackup(universalPowerValue);
+                        }}
+                        className="h-7 w-7 text-primary hover:text-primary/80 hover:bg-primary/10 transition-colors"
+                        title="Edit Universal Power Value"
+                      >
+                        <Edit2 className="h-3.5 w-3.5" />
+                      </Button>
+                    ) : (
+                      <div className="flex items-center gap-1 animate-in fade-in zoom-in-95 duration-200">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={handleSavePowerVal}
+                          disabled={savingPowerVal}
+                          className="h-7 w-7 text-success hover:text-success/80 hover:bg-success/10 transition-colors"
+                          title="Save"
+                        >
+                          {savingPowerVal ? (
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          ) : (
+                            <Check className="h-3.5 w-3.5" />
+                          )}
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => {
+                            setIsEditingPowerVal(false);
+                            setUniversalPowerValue(powerValBackup);
+                          }}
+                          className="h-7 w-7 text-destructive hover:text-destructive/80 hover:bg-destructive/10 transition-colors"
+                          title="Cancel"
+                          disabled={savingPowerVal}
+                        >
+                          <X className="h-3.5 w-3.5" />
+                        </Button>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Dynamic Column Settings Modal */}
         <Dialog open={columnModalOpen} onOpenChange={setColumnModalOpen}>
           <DialogContent className="sm:max-w-[450px] border-primary/10 p-5">
             <DialogHeader className="space-y-1">
-              <DialogTitle className="flex items-center gap-2 text-base">
+              <DialogTitle className="flex items-center gap-2 text-base font-bold">
                 <Settings2 className="h-4 w-4 text-primary" />
                 {editingColumn ? `Edit Column: ${editingColumn.name}` : "Create New Column"}
               </DialogTitle>
@@ -872,8 +1050,8 @@ export default function OperatorsPage() {
                   id="col-name"
                   value={colName}
                   onChange={(e) => setColName(e.target.value)}
-                  placeholder="e.g. Health Allowance, ESI"
-                  className="h-9 text-sm bg-background"
+                  placeholder={isOperators ? "e.g. Health Allowance, ESI" : "e.g. Dep Rate, Cost"}
+                  className="h-8 text-xs bg-background font-semibold"
                 />
               </div>
 
@@ -924,7 +1102,9 @@ export default function OperatorsPage() {
                     </PopoverTrigger>
                     <PopoverContent className="text-xs p-3 space-y-1.5 w-60">
                       <p className="font-semibold">Helper text displayed in secondary header.</p>
-                      <p className="text-muted-foreground">Examples: "4.75%", "13.10%", "350/mth", "2000/Yr"</p>
+                      <p className="text-muted-foreground">
+                        {isOperators ? 'Examples: "4.75%", "13.10%", "350/mth", "2000/Yr"' : 'Examples: "at 15% PA", "Per Hr", "incl comp"'}
+                      </p>
                     </PopoverContent>
                   </Popover>
                 </Label>
@@ -932,8 +1112,8 @@ export default function OperatorsPage() {
                   id="col-meta"
                   value={colMeta}
                   onChange={(e) => setColMeta(e.target.value)}
-                  placeholder="e.g. 4.75% or 350/mth"
-                  className="h-9 text-sm bg-background"
+                  placeholder={isOperators ? "e.g. 4.75% or 350/mth" : "e.g. at 15% PA or Per Hr"}
+                  className="h-8 text-xs bg-background font-mono"
                 />
               </div>
 
@@ -961,7 +1141,9 @@ export default function OperatorsPage() {
                             <li>Round results: <code className="bg-muted px-1 py-0.5 rounded font-mono">round(expr, decimals)</code></li>
                           </ul>
                           <p className="text-[10px] text-muted-foreground pt-1.5 italic">
-                            Example: <code className="font-mono bg-muted p-0.5 rounded block mt-0.5">round([sub_total] * 0.0475, 2)</code>
+                            Example: <code className="font-mono bg-muted p-0.5 rounded block mt-0.5">
+                              {isOperators ? "round([sub_total] * 0.0475, 2)" : "round([mc_cost] * 0.15, 2)"}
+                            </code>
                           </p>
                         </PopoverContent>
                       </Popover>
@@ -971,8 +1153,8 @@ export default function OperatorsPage() {
                       id="col-formula"
                       value={colFormula}
                       onChange={(e) => setColFormula(e.target.value)}
-                      placeholder="e.g. [basic] + [da] + 5"
-                      className="font-mono h-9 text-xs bg-background"
+                      placeholder={isOperators ? "e.g. [basic] + [da] + 5" : "e.g. [mc_cost] * 0.15"}
+                      className="font-mono h-8 text-xs bg-background"
                     />
 
                     {/* Insertable Column Tags */}
@@ -1007,14 +1189,14 @@ export default function OperatorsPage() {
                 type="button"
                 variant="ghost"
                 onClick={() => setColumnModalOpen(false)}
-                className="h-9 text-xs font-semibold"
+                className="h-8 text-xs font-semibold"
               >
                 Cancel
               </Button>
               <Button
                 type="button"
                 onClick={handleSaveColumnWithConfirm}
-                className="h-9 text-xs font-semibold bg-primary hover:bg-primary/90 text-primary-foreground px-4"
+                className="h-8 text-xs font-semibold bg-primary hover:bg-primary/90 text-primary-foreground px-4"
               >
                 Save Column
               </Button>
@@ -1026,25 +1208,25 @@ export default function OperatorsPage() {
         <Dialog open={rowModalOpen} onOpenChange={setRowModalOpen}>
           <DialogContent className="sm:max-w-[420px] border-primary/10 p-5">
             <DialogHeader className="space-y-1">
-              <DialogTitle className="flex items-center gap-2 text-base">
+              <DialogTitle className="flex items-center gap-2 text-base font-bold">
                 <Plus className="h-4 w-4 text-primary" />
-                Add New Designation
+                {config.addDialogTitle}
               </DialogTitle>
               <DialogDescription className="text-xs">
-                Enter the designation name and starting values for this role.
+                {config.addDialogDesc}
               </DialogDescription>
             </DialogHeader>
 
             <div className="space-y-3 py-1">
-              {/* Designation Name */}
+              {/* Row Label */}
               <div className="space-y-1">
-                <Label htmlFor="designation-name" className="text-xs font-semibold">Designation / Role Name</Label>
+                <Label htmlFor="designation-name" className="text-xs font-semibold">{config.rowLabel}</Label>
                 <Input
                   id="designation-name"
                   value={newDesignation}
                   onChange={(e) => setNewDesignation(e.target.value)}
-                  placeholder="e.g. Lead Operator, Technician"
-                  className="h-9 text-sm bg-background font-semibold"
+                  placeholder={config.rowPlaceholder}
+                  className="h-8 text-xs bg-background font-semibold"
                 />
               </div>
 
@@ -1064,7 +1246,7 @@ export default function OperatorsPage() {
                         [col.key]: e.target.value
                       })}
                       placeholder="0"
-                      className="h-9 text-sm bg-background font-mono"
+                      className="h-8 text-xs bg-background font-mono"
                     />
                   </div>
                 ))}
@@ -1076,28 +1258,26 @@ export default function OperatorsPage() {
                 type="button"
                 variant="ghost"
                 onClick={() => setRowModalOpen(false)}
-                className="h-9 text-xs font-semibold"
+                className="h-8 text-xs font-semibold"
               >
                 Cancel
               </Button>
               <Button
                 type="button"
                 onClick={handleAddRow}
-                className="h-9 text-xs font-semibold bg-primary hover:bg-primary/90 text-primary-foreground px-4"
+                className="h-8 text-xs font-semibold bg-primary hover:bg-primary/90 text-primary-foreground px-4"
               >
-                Add Designation
+                {config.addButtonLabel}
               </Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>
 
-
-
         {/* Global Confirmation Dialog Modal */}
         <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>
           <DialogContent className="sm:max-w-[400px] border-destructive/20 bg-card p-5">
             <DialogHeader className="space-y-2">
-              <DialogTitle className="flex items-center gap-2 text-base text-destructive">
+              <DialogTitle className="flex items-center gap-2 text-base text-destructive font-bold">
                 <AlertTriangle className="h-4 w-4" />
                 {confirmTitle}
               </DialogTitle>
@@ -1111,7 +1291,7 @@ export default function OperatorsPage() {
                 type="button"
                 variant="ghost"
                 onClick={() => setConfirmOpen(false)}
-                className="h-9 text-xs font-semibold"
+                className="h-8 text-xs font-semibold"
               >
                 Cancel
               </Button>
@@ -1122,7 +1302,7 @@ export default function OperatorsPage() {
                   confirmAction();
                   setConfirmOpen(false);
                 }}
-                className="h-9 text-xs font-semibold px-4 shadow-sm"
+                className="h-8 text-xs font-semibold px-4 shadow-sm"
               >
                 {confirmButtonText}
               </Button>

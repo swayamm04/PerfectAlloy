@@ -19,6 +19,9 @@ const getActionDescription = (req) => {
   if (path === '/api/operator-table' && method === 'PUT') return 'Updated Operator Table Configuration';
   if (path === '/api/operator-table/reset' && method === 'POST') return 'Reset Operator Table Configuration';
 
+  // System settings actions
+  if (path === '/api/system-settings' && method === 'PUT') return 'Updated System Settings';
+
   // Default to Method + Path
   return `${method} ${path}`;
 };

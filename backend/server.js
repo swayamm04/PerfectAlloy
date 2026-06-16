@@ -15,6 +15,7 @@ const machineRoutes = require('./routes/machineRoutes');
 const operatorTableRoutes = require('./routes/operatorTableRoutes');
 const equipmentTableRoutes = require('./routes/equipmentTableRoutes');
 const machineHourRateRoutes = require('./routes/machineHourRateRoutes');
+const systemSettingRoutes = require('./routes/systemSettingRoutes');
 const auditLogger = require('./middleware/auditMiddleware');
 
 // Load env vars from current directory
@@ -38,6 +39,7 @@ app.use('/api/machines', machineRoutes);
 app.use('/api/operator-table', operatorTableRoutes);
 app.use('/api/equipment-table', equipmentTableRoutes);
 app.use('/api/machine-hour-rate', machineHourRateRoutes);
+app.use('/api/system-settings', systemSettingRoutes);
 
 app.get('/', (req, res) => {
   res.send('API is running...');

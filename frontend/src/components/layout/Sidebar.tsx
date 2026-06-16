@@ -47,8 +47,7 @@ const menuItems: MenuItem[] = [
   { icon: Building2, label: "Departments", path: "/departments", role: "super-admin" },
   { icon: Table, label: "Production Tables", path: "/production-tables", role: "super-admin" },
   { icon: Cpu, label: "Machines", path: "/machines", role: "super-admin" },
-  { icon: Calculator, label: "Operators", path: "/operators", role: "super-admin" },
-  { icon: Calculator, label: "Equipments", path: "/equipments", role: "super-admin" },
+  { icon: Calculator, label: "Salary Capital Charges", path: "/salary-capital-charges", role: "super-admin" },
   { icon: Calculator, label: "Machine Hour Rate", path: "/machine-hour-rate", role: "super-admin" },
   { icon: ClipboardList, label: "Task Queue", path: "/task-queue", role: "admin" },
   { icon: Settings, label: "Settings", path: "/settings" },
@@ -65,8 +64,7 @@ export const Sidebar = ({ collapsed, onToggle }: SidebarProps) => {
         item.path === "/users" || 
         item.path === "/settings" || 
         item.path === "/machines" ||
-        item.path === "/operators" ||
-        item.path === "/equipments" ||
+        item.path === "/salary-capital-charges" ||
         item.path === "/machine-hour-rate"
       );
     }

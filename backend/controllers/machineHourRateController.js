@@ -4,6 +4,9 @@ const EquipmentTable = require('../models/EquipmentTable');
 const DEFAULT_COLUMNS = [
   { key: 'designation', name: 'Machine', type: 'manual', formula: '', meta: '' },
   { key: 'mc_cost', name: 'M/c Cost', type: 'manual', formula: '', meta: '( incl comp)' },
+  { key: 'power', name: 'Power (kW)', type: 'manual', formula: '', meta: '' },
+  { key: 'power_factor', name: 'Power Factor', type: 'manual', formula: '', meta: '' },
+  { key: 'range_value', name: 'Range Value', type: 'manual', formula: '', meta: '' },
   { key: 'dep_pa', name: 'Dep', type: 'formula', formula: '[mc_cost] * 0.15', meta: 'at 15% PA' },
   { key: 'dep_hr', name: 'Dep', type: 'formula', formula: 'round([dep_pa] / 7117.5, 1)', meta: 'Per Hr' },
   { key: 'interest_pa', name: 'Interest', type: 'formula', formula: '[mc_cost] * 0.10', meta: 'at 10% PA' },
@@ -12,18 +15,18 @@ const DEFAULT_COLUMNS = [
 ];
 
 const DEFAULT_ROWS = [
-  { designation: 'Annealing', values: { mc_cost: '1000000' } },
-  { designation: 'CNC', values: { mc_cost: '1875000' } },
-  { designation: 'VMC', values: { mc_cost: '5225000' } },
-  { designation: 'Metrology', values: { mc_cost: '3500000' } },
-  { designation: 'Grinding GCL 100', values: { mc_cost: '2000000' } },
-  { designation: 'Manual Lathe', values: { mc_cost: '6000000' } },
-  { designation: 'Vibrofinishing', values: { mc_cost: '200000' } },
-  { designation: 'Ultrasonic Cleaning', values: { mc_cost: '2500000' } },
-  { designation: 'Laser Marking', values: { mc_cost: '1800000' } },
-  { designation: 'Muratec', values: { mc_cost: '11000000' } },
-  { designation: 'Paragan Grinding', values: { mc_cost: '4500000' } },
-  { designation: 'Grinding CLG 5020 cnc with auto load', values: { mc_cost: '8000000' } },
+  { designation: 'Annealing', values: { mc_cost: '1000000', power: '18', power_factor: '0.75', range_value: '6.8' } },
+  { designation: 'CNC', values: { mc_cost: '1875000', power: '11', power_factor: '0.75', range_value: '6.8' } },
+  { designation: 'VMC', values: { mc_cost: '5225000', power: '15', power_factor: '0.75', range_value: '6.8' } },
+  { designation: 'Metrology', values: { mc_cost: '3500000', power: '5', power_factor: '0.75', range_value: '6.8' } },
+  { designation: 'Grinding GCL 100', values: { mc_cost: '2000000', power: '20', power_factor: '0.75', range_value: '6.8' } },
+  { designation: 'Manual Lathe', values: { mc_cost: '6000000', power: '11', power_factor: '0.75', range_value: '6.8' } },
+  { designation: 'Vibrofinishing', values: { mc_cost: '200000', power: '6', power_factor: '0.75', range_value: '6.8' } },
+  { designation: 'Ultrasonic Cleaning', values: { mc_cost: '2500000', power: '10', power_factor: '0.75', range_value: '6.8' } },
+  { designation: 'Laser Marking', values: { mc_cost: '1800000', power: '5', power_factor: '0.75', range_value: '6.8' } },
+  { designation: 'Muratec', values: { mc_cost: '11000000', power: '40', power_factor: '0.75', range_value: '6.8' } },
+  { designation: 'Paragan Grinding', values: { mc_cost: '4500000', power: '40', power_factor: '0.75', range_value: '6.8' } },
+  { designation: 'Grinding CLG 5020 cnc with auto load', values: { mc_cost: '8000000', power: '40', power_factor: '0.75', range_value: '6.8' } },
 ];
 
 
