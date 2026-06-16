@@ -90,8 +90,8 @@ const createMasterTableRow = async (req, res) => {
         isBlueprint: false
       });
       if (existing) {
-        return res.status(400).json({ 
-          message: `Heat No. ${heatNo} already exists for Part ${partNumber}. Each batch must have a unique Heat No.` 
+        return res.status(400).json({
+          message: `Heat No. ${heatNo} already exists for Part ${partNumber}. Each batch must have a unique Heat No.`
         });
       }
     }
@@ -111,7 +111,7 @@ const createMasterTableRow = async (req, res) => {
     // Notify the first department in the loop
     if (selectedLoop && selectedLoop.length > 0) {
       const firstDeptId = selectedLoop[0];
-      const message = isBlueprint 
+      const message = isBlueprint
         ? `New part definition ${partNumber} (${partName || 'Unknown'}) is ready for production. Please initialize manual inward.`
         : `New part ${partNumber} (${partName || 'Unknown'}) created. Please initialize data.`;
 
@@ -153,8 +153,8 @@ const updateMasterTableRow = async (req, res) => {
           _id: { $ne: req.params.rowId }
         });
         if (existing) {
-          return res.status(400).json({ 
-            message: `Heat No. ${newHeatNo} already exists for Part ${newPartNumber}.` 
+          return res.status(400).json({
+            message: `Heat No. ${newHeatNo} already exists for Part ${newPartNumber}.`
           });
         }
       }

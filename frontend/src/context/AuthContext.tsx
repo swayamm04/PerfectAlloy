@@ -11,6 +11,7 @@ interface User {
   department?: string;
   isAdmin: boolean;
   token: string;
+  module?: 'admin' | 'expenses';
 }
 
 interface AuthContextType {
@@ -47,6 +48,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     checkUser();
   }, []);
+
+  useEffect(() => {
+    if (user?.module === 'expenses') {
+      document.documentElement.setAttribute('data-theme', 'expenses');
+    } else {
+      document.documentElement.removeAttribute('data-theme');
+    }
+  }, [user]);
 
   const login = (userData: User) => {
     setUser(userData);

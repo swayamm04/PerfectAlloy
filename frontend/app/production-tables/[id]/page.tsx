@@ -421,100 +421,100 @@ export default function TableViewPage() {
               </CardTitle>
               <div className="space-y-5">
                 <div className="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
-                <div className="space-y-1">
-                  <label className="text-[10px] font-bold uppercase text-muted-foreground ml-1">Part Name</label>
-                  <Input
-                    placeholder="Part Name"
-                    className="h-10 bg-background border-muted-foreground/20"
-                    value={newPartName}
-                    onChange={(e) => setNewPartName(e.target.value)}
-                  />
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold uppercase text-muted-foreground ml-1">Part Name</label>
+                    <Input
+                      placeholder="Part Name"
+                      className="h-10 bg-background border-muted-foreground/20"
+                      value={newPartName}
+                      onChange={(e) => setNewPartName(e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold uppercase text-muted-foreground ml-1">Part No.</label>
+                    <Input
+                      placeholder="Part No."
+                      className="h-10 bg-background border-muted-foreground/20"
+                      value={newPartNo}
+                      onChange={(e) => setNewPartNo(e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold uppercase text-muted-foreground ml-1">Material</label>
+                    <Input
+                      placeholder="Material"
+                      className="h-10 bg-background border-muted-foreground/20"
+                      value={newMaterial}
+                      onChange={(e) => setNewMaterial(e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold uppercase text-muted-foreground ml-1">Customer Name *</label>
+                    <Input
+                      placeholder="Customer Name"
+                      className="h-10 bg-background border-muted-foreground/20 border-primary/50"
+                      value={newCustomerName}
+                      onChange={(e) => setNewCustomerName(e.target.value)}
+                    />
+                  </div>
                 </div>
-                <div className="space-y-1">
-                  <label className="text-[10px] font-bold uppercase text-muted-foreground ml-1">Part No.</label>
-                  <Input
-                    placeholder="Part No."
-                    className="h-10 bg-background border-muted-foreground/20"
-                    value={newPartNo}
-                    onChange={(e) => setNewPartNo(e.target.value)}
-                  />
-                </div>
-                <div className="space-y-1">
-                  <label className="text-[10px] font-bold uppercase text-muted-foreground ml-1">Material</label>
-                  <Input
-                    placeholder="Material"
-                    className="h-10 bg-background border-muted-foreground/20"
-                    value={newMaterial}
-                    onChange={(e) => setNewMaterial(e.target.value)}
-                  />
-                </div>
-                <div className="space-y-1">
-                  <label className="text-[10px] font-bold uppercase text-muted-foreground ml-1">Customer Name *</label>
-                  <Input
-                    placeholder="Customer Name"
-                    className="h-10 bg-background border-muted-foreground/20 border-primary/50"
-                    value={newCustomerName}
-                    onChange={(e) => setNewCustomerName(e.target.value)}
-                  />
-                </div>
-              </div>
 
-              <div className="flex flex-col sm:flex-row items-end justify-end gap-4 mt-2">
-                <div className="space-y-1 w-full sm:w-1/2 lg:w-1/3">
-                  <label className="text-[10px] font-bold uppercase text-muted-foreground ml-1">Loop Selection</label>
-                  <div className="flex gap-2 w-full">
-                    <Popover>
-                      <PopoverTrigger asChild>
-                        <Button variant="outline" className="h-10 w-full justify-between bg-background border-muted-foreground/20 overflow-hidden text-xs">
-                          <span className="truncate">
-                            {selectedLoop.length > 0
-                              ? `${selectedLoop.length} Steps Sequence`
-                              : "Add Steps..."}
-                          </span>
-                          <Plus className="ml-2 h-3 w-3 shrink-0 opacity-50" />
-                        </Button>
-                      </PopoverTrigger>
-                      <PopoverContent className="w-[300px] p-0" align="start">
-                        <Command>
-                          <CommandInput placeholder="Search departments..." />
-                          <CommandList>
-                            <CommandEmpty>No department found.</CommandEmpty>
-                            <CommandGroup heading="Available Departments">
-                              {table.departments.map((dept) => {
-                                const isDuplicate = selectedLoop.length > 0 && selectedLoop[selectedLoop.length - 1] === dept._id;
-                                return (
-                                  <CommandItem
-                                    key={dept._id}
-                                    value={dept.name}
-                                    disabled={isDuplicate}
-                                    onSelect={() => {
-                                      if (isDuplicate) {
-                                        toast.error(`Cannot select ${dept.name} twice consecutively`);
-                                        return;
-                                      }
-                                      toggleDeptInLoop(dept._id);
-                                    }}
-                                    className={cn(isDuplicate && "opacity-50 cursor-not-allowed")}
-                                  >
-                                    <div className="flex flex-col">
-                                      <span className={cn("font-medium", isDuplicate && "text-muted-foreground")}>{dept.name}</span>
-                                    </div>
-                                    <Plus className="ml-auto h-3 w-3 opacity-50" />
-                                  </CommandItem>
-                                );
-                              })}
-                            </CommandGroup>
-                          </CommandList>
-                        </Command>
-                      </PopoverContent>
-                    </Popover>
-                    <Button size="default" onClick={handleAddRow} className="h-10 font-bold px-8 ml-4 shrink-0 shadow-md">
-                      Add Row
-                    </Button>
+                <div className="flex flex-col sm:flex-row items-end justify-end gap-4 mt-2">
+                  <div className="space-y-1 w-full sm:w-1/2 lg:w-1/3">
+                    <label className="text-[10px] font-bold uppercase text-muted-foreground ml-1">Loop Selection</label>
+                    <div className="flex gap-2 w-full">
+                      <Popover>
+                        <PopoverTrigger asChild>
+                          <Button variant="outline" className="h-10 w-full justify-between bg-background border-muted-foreground/20 overflow-hidden text-xs">
+                            <span className="truncate">
+                              {selectedLoop.length > 0
+                                ? `${selectedLoop.length} Steps Sequence`
+                                : "Add Steps..."}
+                            </span>
+                            <Plus className="ml-2 h-3 w-3 shrink-0 opacity-50" />
+                          </Button>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-[300px] p-0" align="start">
+                          <Command>
+                            <CommandInput placeholder="Search departments..." />
+                            <CommandList>
+                              <CommandEmpty>No department found.</CommandEmpty>
+                              <CommandGroup heading="Available Departments">
+                                {table.departments.map((dept) => {
+                                  const isDuplicate = selectedLoop.length > 0 && selectedLoop[selectedLoop.length - 1] === dept._id;
+                                  return (
+                                    <CommandItem
+                                      key={dept._id}
+                                      value={dept.name}
+                                      disabled={isDuplicate}
+                                      onSelect={() => {
+                                        if (isDuplicate) {
+                                          toast.error(`Cannot select ${dept.name} twice consecutively`);
+                                          return;
+                                        }
+                                        toggleDeptInLoop(dept._id);
+                                      }}
+                                      className={cn(isDuplicate && "opacity-50 cursor-not-allowed")}
+                                    >
+                                      <div className="flex flex-col">
+                                        <span className={cn("font-medium", isDuplicate && "text-muted-foreground")}>{dept.name}</span>
+                                      </div>
+                                      <Plus className="ml-auto h-3 w-3 opacity-50" />
+                                    </CommandItem>
+                                  );
+                                })}
+                              </CommandGroup>
+                            </CommandList>
+                          </Command>
+                        </PopoverContent>
+                      </Popover>
+                      <Button size="default" onClick={handleAddRow} className="h-10 font-bold px-8 ml-4 shrink-0 shadow-md">
+                        Add Row
+                      </Button>
+                    </div>
                   </div>
                 </div>
               </div>
-            </div>
 
               {selectedLoop.length > 0 && (
                 <div className="mt-6 p-4 rounded-xl bg-primary/5 border border-primary/10 animate-in fade-in slide-in-from-top-2 duration-300">

@@ -61,6 +61,63 @@
     --info-foreground: 0 0% 100%;
   }
 
+  /* Expenses Theme Overrides */
+  [data-theme="expenses"] {
+    --background: 262 20% 96%;
+    --foreground: 222 47% 11%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 222 47% 11%;
+
+    --primary: 262 60% 48%;
+    --primary-foreground: 0 0% 100%;
+    
+    --accent: 262 60% 48%;
+    --accent-foreground: 0 0% 100%;
+    
+    --ring: 262 60% 48%;
+    
+    --border: 262 15% 90%;
+    --input: 262 15% 90%;
+    --muted: 262 20% 95%;
+
+    --sidebar-background: 262 45% 40%;
+    --sidebar-foreground: 0 0% 100%;
+    --sidebar-primary: 0 0% 100%;
+    --sidebar-primary-foreground: 262 45% 40%;
+    --sidebar-accent: 262 45% 48%;
+    --sidebar-accent-foreground: 0 0% 100%;
+    --sidebar-border: 262 45% 35%;
+    --sidebar-ring: 262 45% 48%;
+    --sidebar-muted: 262 20% 85%;
+
+    --chart-1: 262 60% 48%;
+  }
+
+  .dark[data-theme="expenses"],
+  .dark [data-theme="expenses"] {
+    --background: 262 30% 8%;
+    --card: 262 25% 10%;
+    --border: 262 20% 14%;
+    --input: 262 20% 14%;
+    --muted: 262 20% 14%;
+
+    --primary: 262 50% 55%;
+    --primary-foreground: 0 0% 100%;
+    
+    --sidebar-background: 262 30% 20%;
+    --sidebar-foreground: 220 14% 96%;
+    --sidebar-primary: 0 0% 100%;
+    --sidebar-primary-foreground: 262 30% 20%;
+    --sidebar-accent: 262 30% 28%;
+    --sidebar-accent-foreground: 220 14% 96%;
+    --sidebar-border: 262 30% 15%;
+    --sidebar-ring: 262 30% 28%;
+    --sidebar-muted: 262 10% 70%;
+
+    --chart-1: 262 50% 55%;
+  }
+
   .dark {
     --background: 222 47% 8%;
     --foreground: 220 14% 96%;
@@ -141,4 +198,19 @@ input::-webkit-inner-spin-button {
 
 input[type=number] {
   -moz-appearance: textfield;
+}
+
+/* 3D Flip Card classes */
+.perspective-1000 {
+  perspective: 1000px;
+}
+.preserve-3d {
+  transform-style: preserve-3d;
+}
+.backface-hidden {
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+}
+.rotate-y-180 {
+  transform: rotateY(180deg);
 }

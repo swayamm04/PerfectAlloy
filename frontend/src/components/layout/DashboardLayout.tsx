@@ -5,7 +5,7 @@ import { useAuth } from "@/src/context/AuthContext";
 import { Sidebar } from "@/src/components/layout/Sidebar";
 import { Header } from "@/src/components/layout/Header";
 import { cn } from "@/lib/utils";
-import { useRouter } from "next/navigation";
+import { useRouter, usePathname } from "next/navigation";
 import { useEffect } from "react";
 
 export const DashboardLayout = ({
@@ -16,12 +16,27 @@ export const DashboardLayout = ({
   const { user, loading } = useAuth();
   const [collapsed, setCollapsed] = useState(false);
   const router = useRouter();
+  const pathname = usePathname();
 
   useEffect(() => {
-    if (!loading && !user) {
-      router.push("/login");
+    if (!loading) {
+      if (!user) {
+        router.push("/login");
+      } else if (
+        user.module === "expenses" && 
+        pathname !== "/" && 
+        pathname !== "/users" && 
+        pathname !== "/settings" && 
+        pathname !== "/machines" && 
+        !pathname.startsWith("/machines/") &&
+        pathname !== "/operators" &&
+        pathname !== "/equipments" &&
+        pathname !== "/machine-hour-rate"
+      ) {
+        router.push("/");
+      }
     }
-  }, [user, loading, router]);
+  }, [user, loading, router, pathname]);
   
   if (loading || !user) {
     return (

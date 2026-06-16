@@ -22,6 +22,8 @@ import {
   LayoutGrid,
   Building2,
   Table,
+  Cpu,
+  Calculator,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -44,6 +46,10 @@ const menuItems: MenuItem[] = [
   { icon: UsersIcon, label: "Users", path: "/users", role: "super-admin" },
   { icon: Building2, label: "Departments", path: "/departments", role: "super-admin" },
   { icon: Table, label: "Production Tables", path: "/production-tables", role: "super-admin" },
+  { icon: Cpu, label: "Machines", path: "/machines", role: "super-admin" },
+  { icon: Calculator, label: "Operators", path: "/operators", role: "super-admin" },
+  { icon: Calculator, label: "Equipments", path: "/equipments", role: "super-admin" },
+  { icon: Calculator, label: "Machine Hour Rate", path: "/machine-hour-rate", role: "super-admin" },
   { icon: ClipboardList, label: "Task Queue", path: "/task-queue", role: "admin" },
   { icon: Settings, label: "Settings", path: "/settings" },
 ];
@@ -53,6 +59,17 @@ export const Sidebar = ({ collapsed, onToggle }: SidebarProps) => {
   const { user } = useAuth();
 
   const filteredItems = menuItems.filter((item) => {
+    if (user?.module === "expenses") {
+      return (
+        item.path === "/" || 
+        item.path === "/users" || 
+        item.path === "/settings" || 
+        item.path === "/machines" ||
+        item.path === "/operators" ||
+        item.path === "/equipments" ||
+        item.path === "/machine-hour-rate"
+      );
+    }
     if (!item.role) return true;
     if (user?.role === "super-admin") return true;
     return item.role === user?.role;
@@ -90,6 +107,17 @@ export const Sidebar = ({ collapsed, onToggle }: SidebarProps) => {
           <ChevronLeft className="h-4 w-4" />
         )}
       </button>
+
+      {/* Portal Badge */}
+      {!collapsed && (
+        <div className="px-4 py-2.5 mx-4 mb-2 rounded-xl bg-black/15 text-sidebar-muted text-xs font-bold text-center border border-white/5 uppercase tracking-widest select-none shadow-inner">
+          {user?.module === 'expenses' ? (
+            <span className="text-purple-300 font-extrabold">Expenses Portal</span>
+          ) : (
+            <span className="text-primary-foreground/80 font-extrabold">Admin Portal</span>
+          )}
+        </div>
+      )}
 
       {/* Navigation */}
       <nav className="mt-4 px-2">

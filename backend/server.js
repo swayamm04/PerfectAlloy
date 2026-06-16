@@ -11,6 +11,10 @@ const departmentRoutes = require('./routes/departmentRoutes');
 const masterTableRoutes = require('./routes/masterTableRoutes');
 const workflowRoutes = require('./routes/workflowRoutes');
 const notificationRoutes = require('./routes/notificationRoutes');
+const machineRoutes = require('./routes/machineRoutes');
+const operatorTableRoutes = require('./routes/operatorTableRoutes');
+const equipmentTableRoutes = require('./routes/equipmentTableRoutes');
+const machineHourRateRoutes = require('./routes/machineHourRateRoutes');
 const auditLogger = require('./middleware/auditMiddleware');
 
 // Load env vars from current directory
@@ -30,6 +34,10 @@ app.use('/api/departments', departmentRoutes);
 app.use('/api/master-tables', masterTableRoutes);
 app.use('/api/workflow', workflowRoutes);
 app.use('/api/notifications', notificationRoutes);
+app.use('/api/machines', machineRoutes);
+app.use('/api/operator-table', operatorTableRoutes);
+app.use('/api/equipment-table', equipmentTableRoutes);
+app.use('/api/machine-hour-rate', machineHourRateRoutes);
 
 app.get('/', (req, res) => {
   res.send('API is running...');
