@@ -9,7 +9,7 @@ const { protect, superAdmin } = require('../middleware/authMiddleware');
 
 router.route('/')
   .get(protect, getMachineHourRates)
-  .put(protect, superAdmin, updateMachineHourRate);
+  .put(protect, updateMachineHourRate);
 
 router.post('/reset', protect, superAdmin, resetMachineHourRates);
 

@@ -36,4 +36,7 @@ const supplierSchema = new mongoose.Schema({
   timestamps: true
 });
 
-module.exports = mongoose.model('Supplier', supplierSchema);
+const createDynamicModel = require('../config/modelHelper');
+
+const Supplier = createDynamicModel('Supplier', supplierSchema, 'admin');
+module.exports = Supplier;

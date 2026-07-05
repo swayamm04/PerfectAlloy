@@ -1,5 +1,6 @@
 const MachineHourRate = require('../models/MachineHourRate');
 const EquipmentTable = require('../models/EquipmentTable');
+const User = require('../models/User');
 
 const DEFAULT_COLUMNS = [
   { key: 'designation', name: 'Machine', type: 'manual', formula: '', meta: '' },
@@ -315,6 +316,15 @@ const getMachineHourRates = async (req, res) => {
 const updateMachineHourRate = async (req, res) => {
   const { machine, values } = req.body;
   try {
+    if (req.user.role !== 'super-admin') {
+      const eqTable = await EquipmentTable.findOne({});
+      const machineRow = eqTable ? eqTable.rows.find(r => r.designation.toLowerCase().trim() === machine.toLowerCase().trim()) : null;
+      const isAssigned = machineRow && machineRow.assignedUsers.some(u => String(u) === String(req.user._id));
+      if (!isAssigned) {
+        return res.status(403).json({ message: 'Unauthorized: You are not assigned to edit this machine cost sheet' });
+      }
+    }
+
     let rate = await MachineHourRate.findOne({ machine });
     if (!rate) {
       rate = new MachineHourRate({ machine, values });

@@ -60,4 +60,7 @@ productSchema.pre('save', function(next) {
   next();
 });
 
-module.exports = mongoose.model('Product', productSchema);
+const createDynamicModel = require('../config/modelHelper');
+
+const Product = createDynamicModel('Product', productSchema, 'admin');
+module.exports = Product;

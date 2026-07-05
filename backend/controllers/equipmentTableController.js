@@ -1,4 +1,5 @@
 const EquipmentTable = require('../models/EquipmentTable');
+const User = require('../models/User');
 
 const DEFAULT_COLUMNS = [
   { key: 'designation', name: 'Machine', type: 'manual', formula: '', meta: '' },
@@ -50,12 +51,13 @@ const getPowerForMachine = (name) => {
 // @access  Private
 const getEquipmentTable = async (req, res) => {
   try {
-    let table = await EquipmentTable.findOne({});
+    let table = await EquipmentTable.findOne({}).populate('rows.assignedUsers', 'name email');
     if (!table) {
       table = await EquipmentTable.create({
         columns: DEFAULT_COLUMNS,
         rows: DEFAULT_ROWS,
       });
+      table = await EquipmentTable.findById(table._id).populate('rows.assignedUsers', 'name email');
     } else {
       let updated = false;
 
@@ -136,13 +138,77 @@ const updateEquipmentTable = async (req, res) => {
   const { columns, rows } = req.body;
   try {
     let table = await EquipmentTable.findOne({});
+    
+    // Get existing table for security validation
+    const existingTable = table || await EquipmentTable.create({ columns: DEFAULT_COLUMNS, rows: DEFAULT_ROWS });
+    
+    const isSuper = req.user.role === 'super-admin';
+    const mappedRows = [];
+    
+    for (let i = 0; i < rows.length; i++) {
+      const newRow = rows[i];
+      const existingRow = existingTable.rows.find(r => r.designation.toLowerCase() === newRow.designation.toLowerCase());
+      
+      const newAssignedIds = Array.isArray(newRow.assignedUsers)
+        ? newRow.assignedUsers.map(u => typeof u === 'object' && u !== null ? String(u._id) : String(u))
+        : [];
+        
+      if (!isSuper) {
+        if (!existingRow) {
+          return res.status(403).json({ message: 'Unauthorized: Regular users cannot add new machines.' });
+        }
+        
+        // Ensure assignedUsers did not change
+        const existingAssignedIds = existingRow.assignedUsers.map(u => String(u));
+        const isAssignedUsersUnchanged = 
+          newAssignedIds.length === existingAssignedIds.length && 
+          newAssignedIds.every(id => existingAssignedIds.includes(id));
+          
+        if (!isAssignedUsersUnchanged) {
+          return res.status(403).json({ message: 'Unauthorized: Regular users cannot modify assigned user permissions.' });
+        }
+        
+        // Ensure regular user is assigned to this row to edit its values
+        const isUserAssigned = existingAssignedIds.includes(String(req.user._id));
+        
+        // Comparing values only
+        const getPlainValues = (valMap) => {
+          if (!valMap) return {};
+          if (typeof valMap.toJSON === 'function') {
+            return valMap.toJSON();
+          }
+          return valMap;
+        };
+        const newVals = getPlainValues(newRow.values);
+        const existingVals = getPlainValues(existingRow.values);
+        
+        const isValuesChanged = JSON.stringify(newVals) !== JSON.stringify(existingVals) || newRow.designation !== existingRow.designation;
+        
+        if (isValuesChanged && !isUserAssigned) {
+          return res.status(403).json({ message: `Unauthorized: You do not have permission to edit the machine "${newRow.designation}".` });
+        }
+        
+        mappedRows.push({
+          ...newRow,
+          assignedUsers: existingRow.assignedUsers
+        });
+      } else {
+        mappedRows.push({
+          ...newRow,
+          assignedUsers: newAssignedIds
+        });
+      }
+    }
+
     if (!table) {
-      table = new EquipmentTable({ columns, rows });
+      table = new EquipmentTable({ columns, rows: mappedRows });
     } else {
       table.columns = columns;
-      table.rows = rows;
+      table.rows = mappedRows;
     }
-    const updatedTable = await table.save();
+    await table.save();
+    
+    const updatedTable = await EquipmentTable.findById(table._id).populate('rows.assignedUsers', 'name email');
     res.json(updatedTable);
   } catch (error) {
     res.status(500).json({ message: 'Server Error: ' + error.message });
@@ -155,10 +221,11 @@ const updateEquipmentTable = async (req, res) => {
 const resetEquipmentTable = async (req, res) => {
   try {
     await EquipmentTable.deleteMany({});
-    const seededTable = await EquipmentTable.create({
+    let seededTable = await EquipmentTable.create({
       columns: DEFAULT_COLUMNS,
       rows: DEFAULT_ROWS,
     });
+    seededTable = await EquipmentTable.findById(seededTable._id).populate('rows.assignedUsers', 'name email');
     res.json(seededTable);
   } catch (error) {
     res.status(500).json({ message: 'Server Error: ' + error.message });

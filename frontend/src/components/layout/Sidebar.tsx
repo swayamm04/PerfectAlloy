@@ -46,9 +46,11 @@ const menuItems: MenuItem[] = [
   { icon: UsersIcon, label: "Users", path: "/users", role: "super-admin" },
   { icon: Building2, label: "Departments", path: "/departments", role: "super-admin" },
   { icon: Table, label: "Production Tables", path: "/production-tables", role: "super-admin" },
-  { icon: Cpu, label: "Machines", path: "/machines", role: "super-admin" },
   { icon: Calculator, label: "Salary Capital Charges", path: "/salary-capital-charges", role: "super-admin" },
   { icon: Calculator, label: "Machine Hour Rate", path: "/machine-hour-rate", role: "super-admin" },
+  { icon: Package, label: "Material Rate", path: "/material-rate", role: "super-admin" },
+  { icon: FileText, label: "Final Cost Sheet", path: "/final-cost-sheet", role: "super-admin" },
+  { icon: FileText, label: "Part no. wise cost sheet", path: "/part-no-wise-cost-sheet", role: "super-admin" },
   { icon: ClipboardList, label: "Task Queue", path: "/task-queue", role: "admin" },
   { icon: Settings, label: "Settings", path: "/settings" },
 ];
@@ -63,10 +65,21 @@ export const Sidebar = ({ collapsed, onToggle }: SidebarProps) => {
         item.path === "/" || 
         item.path === "/users" || 
         item.path === "/settings" || 
-        item.path === "/machines" ||
         item.path === "/salary-capital-charges" ||
-        item.path === "/machine-hour-rate"
+        item.path === "/machine-hour-rate" ||
+        item.path === "/material-rate" ||
+        item.path === "/final-cost-sheet" ||
+        item.path === "/part-no-wise-cost-sheet"
       );
+    }
+    if (
+      item.path === "/salary-capital-charges" ||
+      item.path === "/machine-hour-rate" ||
+      item.path === "/material-rate" ||
+      item.path === "/final-cost-sheet" ||
+      item.path === "/part-no-wise-cost-sheet"
+    ) {
+      return false;
     }
     if (!item.role) return true;
     if (user?.role === "super-admin") return true;

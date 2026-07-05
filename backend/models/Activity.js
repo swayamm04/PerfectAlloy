@@ -1,5 +1,7 @@
 const mongoose = require('mongoose');
 
+const createDynamicModel = require('../config/modelHelper');
+
 const activitySchema = mongoose.Schema({
   user: {
     type: mongoose.Schema.Types.ObjectId,
@@ -31,6 +33,4 @@ const activitySchema = mongoose.Schema({
   },
 });
 
-const Activity = mongoose.model('Activity', activitySchema);
-
-module.exports = Activity;
+module.exports = createDynamicModel('Activity', activitySchema, 'admin');

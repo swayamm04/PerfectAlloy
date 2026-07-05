@@ -50,7 +50,12 @@ export const Notifications = () => {
         setUnreadCount(data.filter((n: Notification) => !n.isRead).length);
       }
     } catch (error) {
-      console.error("Error fetching notifications:", error instanceof Error ? error.message : "Network error");
+      const msg = error instanceof Error ? error.message : "Network error";
+      if (msg.includes("Failed to fetch") || msg.includes("fetch")) {
+        console.warn("Notifications background poll failed (server offline or restarting):", msg);
+      } else {
+        console.error("Error fetching notifications:", msg);
+      }
     }
   };
 

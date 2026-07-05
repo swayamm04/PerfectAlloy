@@ -1,5 +1,7 @@
 const mongoose = require('mongoose');
 
+const createDynamicModel = require('../config/modelHelper');
+
 const departmentSchema = mongoose.Schema(
   {
     name: {
@@ -16,6 +18,4 @@ const departmentSchema = mongoose.Schema(
   }
 );
 
-const Department = mongoose.model('Department', departmentSchema);
-
-module.exports = Department;
+module.exports = createDynamicModel('Department', departmentSchema, 'admin');

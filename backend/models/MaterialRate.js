@@ -27,7 +27,7 @@ const columnSchema = mongoose.Schema({
 });
 
 const rowSchema = mongoose.Schema({
-  designation: { // Keeping the key as 'designation' for 100% component code reuse
+  designation: { // Maps to Material Name in the front-end
     type: String,
     required: true,
   },
@@ -36,14 +36,15 @@ const rowSchema = mongoose.Schema({
     of: String,
     default: {},
   },
-  assignedUsers: [{
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'User',
-  }],
 });
 
-const equipmentTableSchema = mongoose.Schema(
+const materialRateSchema = mongoose.Schema(
   {
+    month: {
+      type: String,
+      required: true,
+      unique: true, // E.g., '2026-03'
+    },
     columns: [columnSchema],
     rows: [rowSchema],
   },
@@ -52,4 +53,4 @@ const equipmentTableSchema = mongoose.Schema(
   }
 );
 
-module.exports = createDynamicModel('EquipmentTable', equipmentTableSchema, 'expenses');
+module.exports = createDynamicModel('MaterialRate', materialRateSchema, 'expenses');

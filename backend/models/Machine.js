@@ -1,5 +1,7 @@
 const mongoose = require('mongoose');
 
+const createDynamicModel = require('../config/modelHelper');
+
 const fieldSchema = mongoose.Schema({
   label: {
     type: String,
@@ -28,6 +30,4 @@ const machineSchema = mongoose.Schema(
   }
 );
 
-const Machine = mongoose.model('Machine', machineSchema);
-
-module.exports = Machine;
+module.exports = createDynamicModel('Machine', machineSchema, 'expenses');

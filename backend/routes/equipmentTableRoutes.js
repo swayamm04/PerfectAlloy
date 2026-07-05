@@ -9,7 +9,7 @@ const { protect, superAdmin } = require('../middleware/authMiddleware');
 
 router.route('/')
   .get(protect, getEquipmentTable)
-  .put(protect, superAdmin, updateEquipmentTable);
+  .put(protect, updateEquipmentTable);
 
 router.post('/reset', protect, superAdmin, resetEquipmentTable);
 

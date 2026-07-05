@@ -1,5 +1,7 @@
 const mongoose = require('mongoose');
 
+const createDynamicModel = require('../config/modelHelper');
+
 const machineHourRateSchema = mongoose.Schema(
   {
     machine: {
@@ -18,6 +20,4 @@ const machineHourRateSchema = mongoose.Schema(
   }
 );
 
-const MachineHourRate = mongoose.model('MachineHourRate', machineHourRateSchema);
-
-module.exports = MachineHourRate;
+module.exports = createDynamicModel('MachineHourRate', machineHourRateSchema, 'expenses');

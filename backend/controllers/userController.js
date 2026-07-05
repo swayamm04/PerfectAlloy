@@ -19,9 +19,7 @@ const authUser = async (req, res) => {
 
   const user = await User.findOne({ email }).populate('department', 'name');
 
-  const isExpensesLogin = email === 'admin@pac.com' && password === 'expences' && portal === 'expenses';
-
-  if (user && (isExpensesLogin || (portal !== 'expenses' && (await user.matchPassword(password))))) {
+  if (user && (await user.matchPassword(password))) {
     res.json({
       _id: user._id,
       name: user.name,
@@ -30,7 +28,7 @@ const authUser = async (req, res) => {
       isAdmin: user.isAdmin,
       department: user.department,
       token: generateToken(user._id),
-      module: isExpensesLogin ? 'expenses' : 'admin',
+      module: portal === 'expenses' ? 'expenses' : 'admin',
     });
   } else {
     res.status(401).json({ message: 'Invalid email or password' });

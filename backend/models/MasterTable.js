@@ -1,5 +1,7 @@
 const mongoose = require('mongoose');
 
+const createDynamicModel = require('../config/modelHelper');
+
 const masterTableSchema = mongoose.Schema(
   {
     name: {
@@ -25,6 +27,4 @@ const masterTableSchema = mongoose.Schema(
   }
 );
 
-const MasterTable = mongoose.model('MasterTable', masterTableSchema);
-
-module.exports = MasterTable;
+module.exports = createDynamicModel('MasterTable', masterTableSchema, 'admin');

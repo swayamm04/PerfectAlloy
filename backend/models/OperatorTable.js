@@ -1,5 +1,7 @@
 const mongoose = require('mongoose');
 
+const createDynamicModel = require('../config/modelHelper');
+
 const columnSchema = mongoose.Schema({
   key: {
     type: String,
@@ -46,6 +48,4 @@ const operatorTableSchema = mongoose.Schema(
   }
 );
 
-const OperatorTable = mongoose.model('OperatorTable', operatorTableSchema);
-
-module.exports = OperatorTable;
+module.exports = createDynamicModel('OperatorTable', operatorTableSchema, 'expenses');

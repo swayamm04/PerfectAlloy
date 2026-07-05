@@ -1,5 +1,7 @@
 const mongoose = require('mongoose');
 
+const createDynamicModel = require('../config/modelHelper');
+
 const notificationSchema = mongoose.Schema(
   {
     userId: {
@@ -32,6 +34,4 @@ const notificationSchema = mongoose.Schema(
   }
 );
 
-const Notification = mongoose.model('Notification', notificationSchema);
-
-module.exports = Notification;
+module.exports = createDynamicModel('Notification', notificationSchema, 'admin');

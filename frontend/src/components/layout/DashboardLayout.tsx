@@ -27,10 +27,21 @@ export const DashboardLayout = ({
         pathname !== "/" && 
         pathname !== "/users" && 
         pathname !== "/settings" && 
-        pathname !== "/machines" && 
-        !pathname.startsWith("/machines/") &&
         pathname !== "/salary-capital-charges" &&
-        pathname !== "/machine-hour-rate"
+        pathname !== "/machine-hour-rate" &&
+        pathname !== "/material-rate" &&
+        pathname !== "/final-cost-sheet" &&
+        pathname !== "/part-no-wise-cost-sheet"
+      ) {
+        router.push("/");
+      } else if (
+        user.module === "admin" && (
+          pathname === "/salary-capital-charges" ||
+          pathname === "/machine-hour-rate" ||
+          pathname === "/material-rate" ||
+          pathname === "/final-cost-sheet" ||
+          pathname === "/part-no-wise-cost-sheet"
+        )
       ) {
         router.push("/");
       }

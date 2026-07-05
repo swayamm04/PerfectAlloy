@@ -1,5 +1,7 @@
 const mongoose = require('mongoose');
 
+const createDynamicModel = require('../config/modelHelper');
+
 const systemSettingSchema = mongoose.Schema(
   {
     key: {
@@ -17,6 +19,4 @@ const systemSettingSchema = mongoose.Schema(
   }
 );
 
-const SystemSetting = mongoose.model('SystemSetting', systemSettingSchema);
-
-module.exports = SystemSetting;
+module.exports = createDynamicModel('SystemSetting', systemSettingSchema, 'expenses');
