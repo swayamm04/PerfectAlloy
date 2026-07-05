@@ -714,7 +714,9 @@ export default function FinalCostSheetView() {
     if (!activeDocument) return;
 
     const initialRates: Record<string, string> = {
-      foundry_conversion_rate: "110"
+      foundry_conversion_rate: "110",
+      rejection_percent: "5",
+      overheads_percent: "18"
     };
 
     allProcesses.forEach(proc => {
@@ -730,6 +732,12 @@ export default function FinalCostSheetView() {
       const firstRow = activeDocument.rows[0];
       if (firstRow.values.foundry_conversion_rate) {
         initialRates.foundry_conversion_rate = firstRow.values.foundry_conversion_rate;
+      }
+      if (firstRow.values.rejection_percent) {
+        initialRates.rejection_percent = firstRow.values.rejection_percent;
+      }
+      if (firstRow.values.overheads_percent) {
+        initialRates.overheads_percent = firstRow.values.overheads_percent;
       }
       allProcesses.forEach(proc => {
         const rateKey = `${proc.key}_rate_sec`;
@@ -931,17 +939,26 @@ export default function FinalCostSheetView() {
     );
     vars.subtotal_cost_scrap = subTotalScrap;
 
-    let rejectionFormula = vals.rejection_cost_scrap_formula || "[subtotal_cost_rm] * 0.05";
-    if (rejectionFormula === "[subtotal_cost_scrap] * 0.05") {
-      rejectionFormula = "[subtotal_cost_rm] * 0.05";
+    const rejPct = (parseFloat(columnRates.rejection_percent) || 5) / 100;
+    const ovhPct = (parseFloat(columnRates.overheads_percent) || 18) / 100;
+
+    let rejectionFormula = vals.rejection_cost_scrap_formula || `[subtotal_cost_rm] * ${rejPct}`;
+    if (rejectionFormula === "[subtotal_cost_scrap] * 0.05" || rejectionFormula === `[subtotal_cost_scrap] * ${rejPct}`) {
+      rejectionFormula = `[subtotal_cost_rm] * ${rejPct}`;
+    }
+    // If the formula is still the old hardcoded default, update it to use current %
+    if (rejectionFormula === "[subtotal_cost_rm] * 0.05") {
+      rejectionFormula = `[subtotal_cost_rm] * ${rejPct}`;
     }
     const rejectionScrap = evaluateFormula(rejectionFormula, vars);
     vars.rejection_cost_scrap = rejectionScrap;
 
-    const overheads = evaluateFormula(
-      vals.overheads_rm_formula || "[subtotal_cost_rm] * 0.18",
-      vars
-    );
+    let overheadsFormula = vals.overheads_rm_formula || `[subtotal_cost_rm] * ${ovhPct}`;
+    // If the formula is still the old hardcoded default, update it to use current %
+    if (overheadsFormula === "[subtotal_cost_rm] * 0.18") {
+      overheadsFormula = `[subtotal_cost_rm] * ${ovhPct}`;
+    }
+    const overheads = evaluateFormula(overheadsFormula, vars);
     vars.overheads_rm = overheads;
 
     const grandTotalRaw = evaluateFormula(
@@ -1264,6 +1281,8 @@ export default function FinalCostSheetView() {
     const savedRows = activeDocument.rows.map(row => {
       const updatedVals = { ...row.values };
       updatedVals.foundry_conversion_rate = columnRates.foundry_conversion_rate;
+      updatedVals.rejection_percent = columnRates.rejection_percent || "5";
+      updatedVals.overheads_percent = columnRates.overheads_percent || "18";
       allProcesses.forEach(proc => {
         updatedVals[`${proc.key}_rate_sec`] = columnRates[proc.key];
       });
@@ -2403,7 +2422,22 @@ export default function FinalCostSheetView() {
                       onDoubleClick={() => triggerFormulaEdit("rejection_cost_scrap_formula")}
                       title={`Formula: ${formulas.rejection_cost_scrap}`}
                     >
-                      Rejection Cost<br />(RM) @ 5%
+                      {isEditing ? (
+                        <div className="flex flex-col items-center gap-0.5">
+                          <span>Rejection Cost<br />(RM) @</span>
+                          <div className="flex items-center gap-0.5" onClick={e => e.stopPropagation()}>
+                            <Input
+                              value={columnRates.rejection_percent ?? "5"}
+                              onChange={e => setColumnRates(prev => ({ ...prev, rejection_percent: e.target.value }))}
+                              className="h-6 w-12 text-center text-[10px] font-bold bg-background border-slate-300 text-primary focus-visible:ring-primary/40 px-1"
+                              onDoubleClick={e => e.stopPropagation()}
+                            />
+                            <span className="text-[10px]">%</span>
+                          </div>
+                        </div>
+                      ) : (
+                        <>Rejection Cost<br />(RM) @ {columnRates.rejection_percent ?? "5"}%</>
+                      )}
                     </TableHead>
                     <TableHead 
                       rowSpan={2} 
@@ -2414,7 +2448,22 @@ export default function FinalCostSheetView() {
                       onDoubleClick={() => triggerFormulaEdit("overheads_rm_formula")}
                       title={`Formula: ${formulas.overheads_rm}`}
                     >
-                      Overheads<br />@ 18%
+                      {isEditing ? (
+                        <div className="flex flex-col items-center gap-0.5">
+                          <span>Overheads<br />@</span>
+                          <div className="flex items-center gap-0.5" onClick={e => e.stopPropagation()}>
+                            <Input
+                              value={columnRates.overheads_percent ?? "18"}
+                              onChange={e => setColumnRates(prev => ({ ...prev, overheads_percent: e.target.value }))}
+                              className="h-6 w-12 text-center text-[10px] font-bold bg-background border-slate-300 text-primary focus-visible:ring-primary/40 px-1"
+                              onDoubleClick={e => e.stopPropagation()}
+                            />
+                            <span className="text-[10px]">%</span>
+                          </div>
+                        </div>
+                      ) : (
+                        <>Overheads<br />@ {columnRates.overheads_percent ?? "18"}%</>
+                      )}
                     </TableHead>
                     <TableHead 
                       rowSpan={2} 
