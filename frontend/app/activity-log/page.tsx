@@ -9,14 +9,11 @@ const ActivityLogView = dynamic(
   () => import('@/src/components/activity-log/ActivityLogView'),
   { 
     ssr: false,
-    loading: () => (
-      <DashboardLayout>
-        <div className="flex flex-col items-center justify-center min-h-[60vh] text-center space-y-4">
+    loading: () => (<div className="flex flex-col items-center justify-center min-h-[60vh] text-center space-y-4">
           <Database className="h-10 w-10 text-primary animate-pulse" />
           <p className="text-muted-foreground animate-pulse">Loading Activity Logs...</p>
         </div>
-      </DashboardLayout>
-    )
+      )
   }
 );
 

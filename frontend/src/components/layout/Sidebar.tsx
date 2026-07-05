@@ -46,6 +46,7 @@ const menuItems: MenuItem[] = [
   { icon: UsersIcon, label: "Users", path: "/users", role: "super-admin" },
   { icon: Building2, label: "Departments", path: "/departments", role: "super-admin" },
   { icon: Table, label: "Production Tables", path: "/production-tables", role: "super-admin" },
+  { icon: Cpu, label: "Machines", path: "/machines", role: "super-admin" },
   { icon: Calculator, label: "Salary Capital Charges", path: "/salary-capital-charges", role: "super-admin" },
   { icon: Calculator, label: "Machine Hour Rate", path: "/machine-hour-rate", role: "super-admin" },
   { icon: Package, label: "Material Rate", path: "/material-rate", role: "super-admin" },
