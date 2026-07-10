@@ -26,7 +26,8 @@ import {
   FileSpreadsheet,
   Repeat,
   Check,
-  ChevronDown
+  ChevronDown,
+  Filter
 } from "lucide-react";
 import { API_URL } from "@/src/lib/api";
 import { cn } from "@/lib/utils";
@@ -65,6 +66,7 @@ interface CostSheetData {
   month: string; // YYYY-MM
   rows: CostSheetRow[];
   customColumns?: CustomColumn[];
+  deletedStaticColumns?: string[];
 }
 
 interface MaterialRateRow {
@@ -343,7 +345,14 @@ export default function FinalCostSheetView() {
   const [newPartNumber, setNewPartNumber] = useState("");
   const [newPartMaterial, setNewPartMaterial] = useState("");
   const [newPartLoop, setNewPartLoop] = useState<string[]>([]);
+  const [newPartLoopUsers, setNewPartLoopUsers] = useState<Record<number, string>>({});
   const [showAddStepDropdown, setShowAddStepDropdown] = useState(false);
+  const [searchPartNumber, setSearchPartNumber] = useState("");
+  const [partNameOpen, setPartNameOpen] = useState(false);
+  const [partNumberOpen, setPartNumberOpen] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [filterPartNumber, setFilterPartNumber] = useState("");
+  const [filterPartNumberOpen, setFilterPartNumberOpen] = useState(false);
 
   // Add Dynamic Column Modal state
   const [showAddColumnModal, setShowAddColumnModal] = useState(false);
@@ -376,8 +385,7 @@ export default function FinalCostSheetView() {
     email: string;
   }
   const [fcsUsers, setFcsUsers] = useState<FCSUser[]>([]);
-  // key = proc.key or col.key, value = array of user IDs assigned
-  const [columnUserAssignments, setColumnUserAssignments] = useState<Record<string, string[]>>({});
+  // User assignment state removed from columns
 
   // Helper to evaluate dynamic costPerSecond for machines
   const calculateMachineRates = (rawRates: any[], equipments: any[], operators: any[], settings: any) => {
@@ -584,15 +592,7 @@ export default function FinalCostSheetView() {
         setFcsUsers(usersData.filter((u: any) => u.role !== "super-admin"));
       }
 
-      // Load column user assignments from system settings
-      if (systemSettings && (systemSettings as any).final_cost_sheet_user_assignments) {
-        try {
-          const parsed = JSON.parse((systemSettings as any).final_cost_sheet_user_assignments);
-          setColumnUserAssignments(parsed || {});
-        } catch {
-          setColumnUserAssignments({});
-        }
-      }
+      // Column user assignments removed
 
       if (sheetsData.length > 0) {
         setActiveMonth(sheetsData[0].month);
@@ -611,39 +611,11 @@ export default function FinalCostSheetView() {
     }
   }, [currentUser]);
 
-  // Save column user assignments to system settings
-  const saveColumnAssignments = async (assignments: Record<string, string[]>) => {
-    try {
-      await fetch(`${API_URL}/api/system-settings`, {
-        method: "PUT",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${currentUser?.token}`
-        },
-        body: JSON.stringify({ key: "final_cost_sheet_user_assignments", value: JSON.stringify(assignments) })
-      });
-    } catch (err) {
-      console.error("Error saving column user assignments:", err);
-    }
-  };
-
-  // Toggle user assignment for a process/column key
-  const handleToggleColumnUser = (procKey: string, userId: string) => {
-    const current = columnUserAssignments[procKey] || [];
-    const updated = current.includes(userId)
-      ? current.filter(id => id !== userId)
-      : [...current, userId];
-    const newAssignments = { ...columnUserAssignments, [procKey]: updated };
-    setColumnUserAssignments(newAssignments);
-    saveColumnAssignments(newAssignments);
-  };
-
-  // Check if current user can edit cells in a given column/process
+  // User assignments are now handled at the row/part level, not column level.
   const canEditProcess = (procKey: string): boolean => {
     if (!currentUser) return false;
     if (currentUser.role === "super-admin") return true;
-    const assigned = columnUserAssignments[procKey] || [];
-    return assigned.includes(String(currentUser._id));
+    return true; // For now, if they can see the page they can edit
   };
 
   // Active Cost Sheet document selection
@@ -654,6 +626,41 @@ export default function FinalCostSheetView() {
 
   const rows = useMemo(() => activeDocument?.rows || [], [activeDocument]);
 
+  const filteredRows = useMemo(() => {
+    let result = rows;
+    if (filterPartNumber) {
+      const lowerFilter = filterPartNumber.toLowerCase();
+      result = result.filter(r => r.partNumber.toLowerCase().includes(lowerFilter));
+    }
+    if (searchPartNumber) {
+      const lowerSearch = searchPartNumber.toLowerCase();
+      result = result.filter(r => 
+        r.partNumber.toLowerCase().includes(lowerSearch) || 
+        r.partName.toLowerCase().includes(lowerSearch)
+      );
+    }
+    return result;
+  }, [rows, searchPartNumber, filterPartNumber]);
+
+  const allPartNames = useMemo(() => {
+    const names = new Set<string>();
+    costSheets.forEach(sheet => {
+      sheet.rows.forEach(r => {
+        if (r.partName) names.add(r.partName);
+      });
+    });
+    return Array.from(names).sort();
+  }, [costSheets]);
+
+  const allPartNumbers = useMemo(() => {
+    const numbers = new Set<string>();
+    costSheets.forEach(sheet => {
+      sheet.rows.forEach(r => {
+        if (r.partNumber) numbers.add(r.partNumber);
+      });
+    });
+    return Array.from(numbers).sort();
+  }, [costSheets]);
 
   const customColumns = useMemo(() => {
     return activeDocument?.customColumns || [];
@@ -661,15 +668,39 @@ export default function FinalCostSheetView() {
 
   const allProcesses = useMemo(() => {
     const customCols = activeDocument?.customColumns || [];
+    const deletedCols = activeDocument?.deletedStaticColumns || [];
+    
+    // Create a map of static overrides from customColumns
+    const staticOverrides = new Map<string, any>();
+    const pureCustomCols: any[] = [];
+
+    customCols.forEach(c => {
+      if (PROCESS_CONFIGS.some(p => p.key === c.key)) {
+        staticOverrides.set(c.key, c);
+      } else {
+        pureCustomCols.push(c);
+      }
+    });
+
+    const activeStaticProcesses = PROCESS_CONFIGS
+      .filter(p => !deletedCols.includes(p.key))
+      .map(p => {
+        const override = staticOverrides.get(p.key);
+        return {
+          ...p,
+          name: override ? override.name : p.name,
+          hasCycleTime: override ? !!override.hasCycleTime : !p.isSpecialMetrology,
+          hasTooling: override ? !!override.hasTooling : !!p.hasTooling,
+          customIncludes: override ? override.customIncludes || [] : [],
+          linkedMachine: override ? override.linkedMachine : undefined,
+          isStatic: true,
+          hasMetadata: false,
+        };
+      });
+
     return [
-      ...PROCESS_CONFIGS.map(p => ({
-        ...p,
-        isStatic: true,
-        hasMetadata: false,
-        hasCycleTime: !p.isSpecialMetrology,
-        hasTooling: !!p.hasTooling
-      })),
-      ...customCols.map(c => ({
+      ...activeStaticProcesses,
+      ...pureCustomCols.map(c => ({
         key: c.key,
         name: c.name,
         defaultRate: c.defaultRate || 0,
@@ -858,7 +889,7 @@ export default function FinalCostSheetView() {
               production_quantity: prodQty
             };
 
-            const customIncludes = (!proc.isStatic && (proc as any).customIncludes) || [];
+            const customIncludes = ((proc as any).customIncludes) || [];
             customIncludes.forEach((ci: any) => {
               if (ci.checked) {
                 visitVars[ci.key] = parseFloat(vals[`${proc.key}_${idx}_custom_${ci.key}`]) || 0;
@@ -885,7 +916,7 @@ export default function FinalCostSheetView() {
           production_quantity: prodQty
         };
 
-        const customIncludes = (!proc.isStatic && (proc as any).customIncludes) || [];
+        const customIncludes = ((proc as any).customIncludes) || [];
         customIncludes.forEach((ci: any) => {
           if (ci.checked) {
             visitVars[ci.key] = parseFloat(vals[`${proc.key}_custom_${ci.key}`]) || 0;
@@ -899,7 +930,7 @@ export default function FinalCostSheetView() {
       processCostsSum += cost;
       vars[proc.key] = cost; // Add individual process cost as a variable
 
-      const customIncludes = (!proc.isStatic && (proc as any).customIncludes) || [];
+      const customIncludes = ((proc as any).customIncludes) || [];
       customIncludes.forEach((ci: any) => {
         if (ci.checked) {
           vars[`${proc.key}_custom_${ci.key}`] = parseFloat(vals[`${proc.key}_custom_${ci.key}`]) || 0;
@@ -1067,7 +1098,7 @@ export default function FinalCostSheetView() {
           { key: "finish_weight", label: "Finish Weight", value: firstFinishWeight.toString(), type: "field" }
         ];
 
-        const customIncludes = (!proc.isStatic && (proc as any).customIncludes) || [];
+        const customIncludes = ((proc as any).customIncludes) || [];
         const checkedCustomIncludes = customIncludes.filter((ci: any) => ci.checked);
         checkedCustomIncludes.forEach((ci: any) => {
           const val = firstVals[`${proc.key}_custom_${ci.key}`] || "0";
@@ -1126,7 +1157,7 @@ export default function FinalCostSheetView() {
         type: "column" as const
       });
 
-      const customIncludes = (!proc.isStatic && (proc as any).customIncludes) || [];
+      const customIncludes = ((proc as any).customIncludes) || [];
       const checkedCustomIncludes = customIncludes.filter((ci: any) => ci.checked);
       checkedCustomIncludes.forEach((ci: any) => {
         const val = firstVals[`${proc.key}_custom_${ci.key}`] || "0";
@@ -1210,18 +1241,30 @@ export default function FinalCostSheetView() {
         defaultFormula = "[scrap_raw_material_cost_component] + [foundry_conversion_cost_component] + [semi_machining_cost] + [process_costs_sum]";
         currentFormula = firstVals.subtotal_cost_scrap_formula || defaultFormula;
         break;
-      case "rejection_cost_scrap_formula":
-        title = "Edit Rejection Cost (RM) @ 5% Formula";
-        description = "Formula for Rejection Cost (RM) @ 5% calculation.";
-        defaultFormula = "[subtotal_cost_rm] * 0.05";
+      case "rejection_cost_scrap_formula": {
+        const rejPctVal = columnRates.rejection_percent ?? "5";
+        const rejPctFloat = (parseFloat(rejPctVal) || 5) / 100;
+        title = `Edit Rejection Cost (RM) @ ${rejPctVal}% Formula`;
+        description = `Formula for Rejection Cost (RM) @ ${rejPctVal}% calculation.`;
+        defaultFormula = `[subtotal_cost_rm] * ${rejPctFloat}`;
         currentFormula = firstVals.rejection_cost_scrap_formula || defaultFormula;
+        if (currentFormula === "[subtotal_cost_rm] * 0.05" || currentFormula === "[subtotal_cost_scrap] * 0.05") {
+          currentFormula = defaultFormula;
+        }
         break;
-      case "overheads_rm_formula":
-        title = "Edit Overheads @ 18% Formula";
-        description = "Formula for Overheads @ 18% calculation.";
-        defaultFormula = "[subtotal_cost_rm] * 0.18";
+      }
+      case "overheads_rm_formula": {
+        const ohPctVal = columnRates.overheads_percent ?? "18";
+        const ohPctFloat = (parseFloat(ohPctVal) || 18) / 100;
+        title = `Edit Overheads @ ${ohPctVal}% Formula`;
+        description = `Formula for Overheads @ ${ohPctVal}% calculation.`;
+        defaultFormula = `[subtotal_cost_rm] * ${ohPctFloat}`;
         currentFormula = firstVals.overheads_rm_formula || defaultFormula;
+        if (currentFormula === "[subtotal_cost_rm] * 0.18") {
+          currentFormula = defaultFormula;
+        }
         break;
+      }
       case "grand_total_cost_rm_formula":
         title = "Edit Grand Total Cost (RM) Formula";
         description = "Formula for Grand Total Cost (RM) calculation.";
@@ -1474,6 +1517,12 @@ export default function FinalCostSheetView() {
       const index = updated.findIndex(r => r.month === activeMonth);
       if (index > -1) {
         const sheet = { ...updated[index] };
+        
+        // If it's a static column, add to deletedStaticColumns
+        if (PROCESS_CONFIGS.some(p => p.key === colKey)) {
+          sheet.deletedStaticColumns = [...(sheet.deletedStaticColumns || []), colKey];
+        }
+        
         sheet.customColumns = (sheet.customColumns || []).filter(col => col.key !== colKey);
         sheet.rows = sheet.rows.map(row => {
           const nextVals = { ...row.values };
@@ -1535,9 +1584,10 @@ export default function FinalCostSheetView() {
       const index = updated.findIndex(r => r.month === activeMonth);
       if (index > -1) {
         const sheet = { ...updated[index] };
-        
+        let found = false;
         sheet.customColumns = (sheet.customColumns || []).map(col => {
           if (col.key === editingColumnKey) {
+            found = true;
             return {
               ...col,
               name: editingColumnName.trim(),
@@ -1550,6 +1600,18 @@ export default function FinalCostSheetView() {
           }
           return col;
         });
+
+        if (!found && PROCESS_CONFIGS.some(p => p.key === editingColumnKey)) {
+          sheet.customColumns.push({
+            key: editingColumnKey,
+            name: editingColumnName.trim(),
+            hasCycleTime: editingColumnHasCycleTime,
+            hasTooling: editingColumnHasTooling,
+            defaultRate: dbRate || 0,
+            customIncludes: editingColCustomIncludes,
+            linkedMachine: editingColLinkedMachine
+          });
+        }
 
         // Initialize missing value fields on rows and cleanup deselected ones
         sheet.rows = sheet.rows.map(row => {
@@ -1699,6 +1761,9 @@ export default function FinalCostSheetView() {
       if (hasTooling) {
         defaultValues[`${procKey}_${idx}_tooling_cost`] = "0";
       }
+      if (newPartLoopUsers[idx]) {
+        defaultValues[`${procKey}_${idx}_assigned_user`] = newPartLoopUsers[idx];
+      }
     });
 
     // Populate initial rates on the new row
@@ -1802,7 +1867,7 @@ export default function FinalCostSheetView() {
       const hasMetadata = !!proc.hasMetadata;
       const hasCycleTime = proc.isStatic ? !proc.isSpecialMetrology : !!proc.hasCycleTime;
       const hasTooling = proc.isStatic ? !!proc.hasTooling : !!proc.hasTooling;
-      const customIncludes = (!proc.isStatic && (proc as any).customIncludes) || [];
+      const customIncludes = ((proc as any).customIncludes) || [];
       const checkedCustomIncludes = customIncludes.filter((ci: any) => ci.checked);
 
       if (hasMetadata) headerRow1.push(`${proc.name} (Metadata)`);
@@ -1860,7 +1925,7 @@ export default function FinalCostSheetView() {
         const hasMetadata = !!proc.hasMetadata;
         const hasCycleTime = proc.isStatic ? !proc.isSpecialMetrology : !!proc.hasCycleTime;
         const hasTooling = proc.isStatic ? !!proc.hasTooling : !!proc.hasTooling;
-        const customIncludes = (!proc.isStatic && (proc as any).customIncludes) || [];
+        const customIncludes = ((proc as any).customIncludes) || [];
         const checkedCustomIncludes = customIncludes.filter((ci: any) => ci.checked);
         const customIncludesConcat: Record<string, string[]> = {};
         checkedCustomIncludes.forEach(ci => {
@@ -2057,8 +2122,85 @@ export default function FinalCostSheetView() {
           </p>
         </div>
 
-        <div className="flex items-center gap-3 self-start md:self-center">
-          {/* Month Selection */}
+        <div className="flex items-center gap-3 self-start md:self-center flex-wrap md:flex-nowrap">
+          {/* 1. Search */}
+          <div className="relative">
+            <Input
+              placeholder="Search part number or name..."
+              value={searchPartNumber}
+              onChange={(e) => {
+                setSearchPartNumber(e.target.value);
+                setSearchOpen(true);
+              }}
+              onFocus={() => setSearchOpen(true)}
+              onBlur={() => setTimeout(() => setSearchOpen(false), 200)}
+              className="h-10 text-xs w-[220px] bg-background/60 shadow-sm border-muted-foreground/20 focus-visible:ring-primary"
+            />
+            {searchOpen && Array.from(new Set([...allPartNumbers, ...allPartNames])).filter(n => n.toLowerCase().includes(searchPartNumber.toLowerCase()) && n !== searchPartNumber).length > 0 && (
+              <div className="absolute z-50 w-[220px] top-full mt-1 left-0 bg-background border border-slate-200 shadow-xl rounded-xl max-h-60 overflow-y-auto custom-scrollbar p-1">
+                {Array.from(new Set([...allPartNumbers, ...allPartNames])).filter(n => n.toLowerCase().includes(searchPartNumber.toLowerCase()) && n !== searchPartNumber).map(item => (
+                  <div
+                    key={item}
+                    onClick={() => {
+                      setSearchPartNumber(item);
+                      setSearchOpen(false);
+                    }}
+                    className="px-2.5 py-1.5 hover:bg-muted/60 text-foreground cursor-pointer text-xs font-semibold rounded-lg transition-colors"
+                  >
+                    {item}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* 2. Filter */}
+          <Popover open={filterPartNumberOpen} onOpenChange={setFilterPartNumberOpen}>
+            <PopoverTrigger asChild>
+              <Button className="h-10 px-3 text-xs font-semibold bg-background/60 shadow-sm border border-muted-foreground/20 text-foreground hover:bg-background/60 hover:text-foreground gap-2 min-w-[140px] justify-between">
+                <div className="flex items-center gap-2">
+                  <Filter className="h-4 w-4" />
+                  {filterPartNumber ? filterPartNumber : "All Part Nos"}
+                </div>
+                <ChevronDown className="h-3 w-3 opacity-50" />
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-[200px] p-0" align="start">
+              <Command>
+                <CommandInput placeholder="Search part no..." className="h-9 text-xs" />
+                <CommandList>
+                  <CommandEmpty className="text-xs p-2 text-center text-muted-foreground">No part number found.</CommandEmpty>
+                  <CommandGroup>
+                    <CommandItem
+                      value="All Part Nos"
+                      onSelect={() => {
+                        setFilterPartNumber("");
+                        setFilterPartNumberOpen(false);
+                      }}
+                      className="text-xs cursor-pointer"
+                    >
+                      All Part Nos
+                    </CommandItem>
+                    {allPartNumbers.map(num => (
+                      <CommandItem
+                        key={num}
+                        value={num}
+                        onSelect={() => {
+                          setFilterPartNumber(num);
+                          setFilterPartNumberOpen(false);
+                        }}
+                        className="text-xs cursor-pointer"
+                      >
+                        {num}
+                      </CommandItem>
+                    ))}
+                  </CommandGroup>
+                </CommandList>
+              </Command>
+            </PopoverContent>
+          </Popover>
+
+          {/* 3. Edit Tab (Card) */}
           <Card className="border-none shadow-md bg-card/60 backdrop-blur-md py-2 px-3.5 w-fit">
             <div className="flex items-center gap-4">
               <div className="flex flex-col gap-1">
@@ -2177,6 +2319,7 @@ export default function FinalCostSheetView() {
             </div>
           </Card>
 
+          {/* 4. Export */}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="outline" className="h-10 px-4 font-bold border-muted-foreground/20 hover:bg-primary/5 transition-colors gap-2">
@@ -2206,28 +2349,32 @@ export default function FinalCostSheetView() {
             <div className="flex h-72 items-center justify-center">
               <Loader2 className="h-12 w-12 animate-spin text-primary" />
             </div>
-          ) : rows.length === 0 ? (
+          ) : filteredRows.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-64 text-muted-foreground space-y-4">
               <AlertTriangle className="h-12 w-12 text-yellow-500" />
-              <p className="text-sm font-semibold">No cost sheet configuration loaded for this month</p>
-              <Button onClick={fetchData}>Reload Data</Button>
+              <p className="text-sm font-semibold">{searchPartNumber ? "No parts match your search" : "No cost sheet configuration loaded for this month"}</p>
+              {searchPartNumber ? (
+                <Button onClick={() => setSearchPartNumber("")}>Clear Search</Button>
+              ) : (
+                <Button onClick={fetchData}>Reload Data</Button>
+              )}
             </div>
           ) : (
             <div className="overflow-x-auto max-w-full custom-scrollbar">
               <Table className="border-separate border-spacing-0 w-max min-w-full border border-slate-200">
                 <TableHeader className="bg-muted/50 border-b">
                   <TableRow className="hover:bg-transparent text-center font-bold text-[10px] text-muted-foreground bg-muted/30">
-                    <TableHead rowSpan={2} className="text-center font-bold text-[10px] text-muted-foreground border-r border-slate-200 min-w-[90px] bg-muted/30 whitespace-normal leading-tight py-2">Part<br />Name</TableHead>
-                    <TableHead rowSpan={2} className="text-center font-bold text-[10px] text-muted-foreground border-r border-slate-200 min-w-[95px] bg-muted/30 whitespace-normal leading-tight py-2">Part<br />Number</TableHead>
-                    <TableHead rowSpan={2} className="text-center font-bold text-[10px] text-muted-foreground border-r border-slate-200 min-w-[90px] bg-muted/30 whitespace-normal leading-tight py-2">Material<br />Name</TableHead>
-                    <TableHead rowSpan={2} className="text-center font-bold text-[10px] text-muted-foreground border-r border-slate-200 min-w-[95px] bg-muted/30 whitespace-normal leading-tight py-2">Rough<br />Casting<br />Weight</TableHead>
-                    <TableHead rowSpan={2} className="text-center font-bold text-[10px] text-muted-foreground border-r border-slate-200 min-w-[110px] bg-muted/30 whitespace-normal leading-tight py-2">Finish Weight<br />(finish weight )</TableHead>
-                    <TableHead rowSpan={2} className="text-center font-bold text-[10px] text-muted-foreground border-r border-slate-200 min-w-[110px] bg-muted/30 whitespace-normal leading-tight py-2">Origin Raw<br />material<br />cost / kg</TableHead>
-                    <TableHead rowSpan={2} className="text-center font-bold text-[10px] text-muted-foreground border-r border-slate-200 min-w-[110px] bg-muted/30 whitespace-normal leading-tight py-2">Scrap Raw<br />material<br />cost / kg</TableHead>
+                    <TableHead rowSpan={2} className="text-center font-bold text-[10px] text-muted-foreground border-r border-slate-300 min-w-[90px] bg-muted/30 whitespace-normal leading-tight py-2">Part<br />Name</TableHead>
+                    <TableHead rowSpan={2} className="text-center font-bold text-[10px] text-muted-foreground border-r border-slate-300 min-w-[95px] bg-muted/30 whitespace-normal leading-tight py-2">Part<br />Number</TableHead>
+                    <TableHead rowSpan={2} className="text-center font-bold text-[10px] text-muted-foreground border-r border-slate-300 min-w-[90px] bg-muted/30 whitespace-normal leading-tight py-2">Material<br />Name</TableHead>
+                    <TableHead rowSpan={2} className="text-center font-bold text-[10px] text-muted-foreground border-r border-slate-300 min-w-[95px] bg-muted/30 whitespace-normal leading-tight py-2">Rough<br />Casting<br />Weight</TableHead>
+                    <TableHead rowSpan={2} className="text-center font-bold text-[10px] text-muted-foreground border-r border-slate-300 min-w-[110px] bg-muted/30 whitespace-normal leading-tight py-2">Finish Weight<br />(finish weight )</TableHead>
+                    <TableHead rowSpan={2} className="text-center font-bold text-[10px] text-muted-foreground border-r border-slate-300 min-w-[110px] bg-muted/30 whitespace-normal leading-tight py-2">Origin Raw<br />material<br />cost / kg</TableHead>
+                    <TableHead rowSpan={2} className="text-center font-bold text-[10px] text-muted-foreground border-r border-slate-300 min-w-[110px] bg-muted/30 whitespace-normal leading-tight py-2">Scrap Raw<br />material<br />cost / kg</TableHead>
                     <TableHead 
                       rowSpan={2} 
                       className={cn(
-                        "text-center font-bold text-[10px] text-muted-foreground border-r border-slate-200 min-w-[125px] bg-muted/30 whitespace-normal leading-tight py-2 select-none transition-colors",
+                        "text-center font-bold text-[10px] text-muted-foreground border-r border-slate-300 min-w-[125px] bg-muted/30 whitespace-normal leading-tight py-2 select-none transition-colors",
                         isEditing && "hover:bg-slate-200/80 cursor-pointer hover:outline-dashed hover:outline-1 hover:outline-primary/45 rounded"
                       )}
                       onDoubleClick={() => triggerFormulaEdit("origin_raw_material_cost_component_formula")}
@@ -2238,7 +2385,7 @@ export default function FinalCostSheetView() {
                     <TableHead 
                       rowSpan={2} 
                       className={cn(
-                        "text-center font-bold text-[10px] text-muted-foreground border-r border-slate-200 min-w-[125px] bg-muted/30 whitespace-normal leading-tight py-2 select-none transition-colors",
+                        "text-center font-bold text-[10px] text-muted-foreground border-r border-slate-300 min-w-[125px] bg-muted/30 whitespace-normal leading-tight py-2 select-none transition-colors",
                         isEditing && "hover:bg-slate-200/80 cursor-pointer hover:outline-dashed hover:outline-1 hover:outline-primary/45 rounded"
                       )}
                       onDoubleClick={() => triggerFormulaEdit("scrap_raw_material_cost_component_formula")}
@@ -2249,7 +2396,7 @@ export default function FinalCostSheetView() {
                     <TableHead 
                       rowSpan={2} 
                       className={cn(
-                        "text-center font-bold text-[10px] text-muted-foreground border-r border-slate-200 min-w-[130px] bg-muted/30 whitespace-normal leading-tight py-2 select-none transition-colors",
+                        "text-center font-bold text-[10px] text-muted-foreground border-r border-slate-300 min-w-[130px] bg-muted/30 whitespace-normal leading-tight py-2 select-none transition-colors",
                         isEditing && "hover:bg-slate-200/80 cursor-pointer hover:outline-dashed hover:outline-1 hover:outline-primary/45 rounded"
                       )}
                       onDoubleClick={() => triggerFormulaEdit("foundry_conversion_cost_component_formula")}
@@ -2257,9 +2404,9 @@ export default function FinalCostSheetView() {
                     >
                       Foundry conversion<br />cost / component<br />(Rs)
                     </TableHead>
-                    <TableHead rowSpan={2} className="text-center font-bold text-[10px] text-muted-foreground border-r border-slate-200 min-w-[110px] bg-muted/30 whitespace-normal leading-tight py-2">Semi machining<br />cost in (Rs)</TableHead>
+                    <TableHead rowSpan={2} className="text-center font-bold text-[10px] text-muted-foreground border-r border-slate-300 min-w-[110px] bg-muted/30 whitespace-normal leading-tight py-2">Semi machining<br />cost in (Rs)</TableHead>
                     {customColumns.filter(c => c.hasMetadata && !c.hasCycleTime && !c.hasTooling).map(col => (
-                      <TableHead key={col.key} rowSpan={2} className="text-center font-bold text-[10px] text-muted-foreground border-r border-slate-200 min-w-[100px] bg-muted/30 whitespace-normal leading-tight py-2 align-middle">
+                      <TableHead key={col.key} rowSpan={2} className="text-center font-bold text-[10px] text-muted-foreground border-r border-slate-300 min-w-[100px] bg-muted/30 whitespace-normal leading-tight py-2 align-middle">
                         {col.name}
                       </TableHead>
                     ))}
@@ -2267,17 +2414,15 @@ export default function FinalCostSheetView() {
                       const hasMetadata = !!proc.hasMetadata;
                       const hasCycleTime = proc.isStatic ? !proc.isSpecialMetrology : !!proc.hasCycleTime;
                       const hasTooling = proc.isStatic ? !!proc.hasTooling : !!proc.hasTooling;
-                      const customIncludes = (!proc.isStatic && (proc as any).customIncludes) || [];
+                      const customIncludes = ((proc as any).customIncludes) || [];
                       const checkedCustomIncludes = customIncludes.filter((ci: any) => ci.checked);
-                      const colSpan = proc.isSpecialMetrology ? 3 : (proc.isSpecialPacking ? 3 : (hasMetadata ? 1 : 0) + (hasCycleTime ? 1 : 0) + (hasTooling ? 1 : 0) + checkedCustomIncludes.length + 1);
+                      const colSpan = proc.isSpecialMetrology ? 3 : (proc.isSpecialPacking ? 2 : (hasMetadata ? 1 : 0) + (hasCycleTime ? 1 : 0) + (hasTooling ? 1 : 0) + checkedCustomIncludes.length + 1);
                       const dispName = (proc.key === "annealing" || proc.key === "heat_treatment") ? `${proc.name} cost in (Rs)` : proc.name;
-                      const assignedUserIds = columnUserAssignments[proc.key] || [];
-                      const assignedUserObjs = fcsUsers.filter(u => assignedUserIds.includes(u._id));
                       return (
                         <TableHead
                           key={`dept_${proc.key}`}
                           colSpan={colSpan}
-                          className="text-center font-bold text-[10px] text-muted-foreground border-r border-slate-200 bg-muted/30 whitespace-normal leading-tight py-2 align-middle relative"
+                          className="text-center font-bold text-[10px] text-muted-foreground border-r-[3px] border-slate-300 bg-muted/30 whitespace-normal leading-tight py-2 align-middle relative"
                         >
                           <div className="flex flex-col items-center justify-center gap-1 relative w-full py-1">
                             <span className="whitespace-normal leading-tight text-center max-w-full px-1 block">
@@ -2285,76 +2430,10 @@ export default function FinalCostSheetView() {
                                 <span key={i} className="block">{line}</span>
                               ))}
                             </span>
-                            {(assignedUserObjs.length > 0 || (isSuperAdmin && isEditing)) && (
-                              <div className="flex items-center gap-1 justify-center mt-0.5">
-                                {/* Assigned-user avatars — visible to everyone always */}
-                                {assignedUserObjs.length > 0 && (
-                                  <div className="flex items-center gap-0.5">
-                                    {assignedUserObjs.slice(0, 2).map(u => (
-                                      <span key={u._id} className="h-4 w-4 rounded-full bg-primary/15 text-primary text-[7px] font-bold flex items-center justify-center border border-primary/30" title={u.name}>
-                                        {u.name[0].toUpperCase()}
-                                      </span>
-                                    ))}
-                                    {assignedUserObjs.length > 2 && (
-                                      <span className="h-4 w-4 rounded-full bg-muted text-muted-foreground text-[7px] font-bold flex items-center justify-center border border-muted">
-                                        +{assignedUserObjs.length - 2}
-                                      </span>
-                                    )}
-                                  </div>
-                                )}
-                                {/* Assign-user dropdown — Super Admin, only while editing */}
-                                {isSuperAdmin && isEditing && (
-                                  <Popover>
-                                    <PopoverTrigger asChild>
-                                      <button
-                                        type="button"
-                                        className="h-4 w-4 rounded flex items-center justify-center text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors flex-shrink-0"
-                                        title="Assign Users to this Column"
-                                      >
-                                        <ChevronDown className="h-2.5 w-2.5" />
-                                      </button>
-                                    </PopoverTrigger>
-                                    <PopoverContent className="w-56 p-2.5 shadow-xl border border-muted z-50" side="bottom" align="center">
-                                      <div className="space-y-1.5">
-                                        <p className="text-[10px] font-bold text-foreground">Assign Users to &ldquo;{proc.name}&rdquo;</p>
-                                        <div className="max-h-[160px] overflow-y-auto space-y-0.5 pr-0.5">
-                                          {fcsUsers.length === 0 ? (
-                                            <p className="text-[10px] text-muted-foreground italic text-center py-2">No users available.</p>
-                                          ) : (
-                                            fcsUsers.map(u => {
-                                              const isChecked = assignedUserIds.includes(u._id);
-                                              return (
-                                                <button
-                                                  key={u._id}
-                                                  type="button"
-                                                  onClick={() => handleToggleColumnUser(proc.key, u._id)}
-                                                  className={cn(
-                                                    "flex w-full items-center gap-2 rounded px-2 py-1.5 text-xs font-medium transition-colors",
-                                                    isChecked ? "bg-primary/10 text-primary" : "hover:bg-muted/60 text-foreground"
-                                                  )}
-                                                >
-                                                  <div className={cn("h-3.5 w-3.5 rounded-sm border flex items-center justify-center shrink-0", isChecked ? "bg-primary border-primary" : "border-muted-foreground/40")}>
-                                                    {isChecked && <Check className="h-2.5 w-2.5 text-primary-foreground" />}
-                                                  </div>
-                                                  <div className="flex flex-col items-start">
-                                                    <span className="text-[10px]">{u.name}</span>
-                                                    <span className="text-[9px] text-muted-foreground">{u.email}</span>
-                                                  </div>
-                                                </button>
-                                              );
-                                            })
-                                          )}
-                                        </div>
-                                      </div>
-                                    </PopoverContent>
-                                  </Popover>
-                                )}
-                              </div>
-                            )}
                           </div>
                           
-                          {/* Edit/Delete custom column buttons — Super Admin, only while editing, only for custom columns, placed in top right corner */}
-                          {isSuperAdmin && isEditing && !proc.isStatic && (
+                          {/* Edit/Delete custom column buttons — Super Admin, only while editing, placed in top right corner */}
+                          {isSuperAdmin && isEditing && (
                             <div className="absolute top-1 right-1 flex items-center gap-0.5">
                               <button
                                 type="button"
@@ -2394,7 +2473,7 @@ export default function FinalCostSheetView() {
                     <TableHead 
                       rowSpan={2} 
                       className={cn(
-                        "text-center font-bold text-[10px] text-muted-foreground border-r border-slate-200 min-w-[100px] bg-muted/30 whitespace-normal leading-tight py-2 select-none transition-colors",
+                        "text-center font-bold text-[10px] text-muted-foreground border-r border-slate-300 min-w-[100px] bg-muted/30 whitespace-normal leading-tight py-2 select-none transition-colors",
                         isEditing && "hover:bg-slate-200/80 cursor-pointer hover:outline-dashed hover:outline-1 hover:outline-primary/45 rounded"
                       )}
                       onDoubleClick={() => triggerFormulaEdit("subtotal_cost_rm_formula")}
@@ -2405,7 +2484,7 @@ export default function FinalCostSheetView() {
                     <TableHead 
                       rowSpan={2} 
                       className={cn(
-                        "text-center font-bold text-[10px] text-muted-foreground border-r border-slate-200 min-w-[100px] bg-muted/30 whitespace-normal leading-tight py-2 select-none transition-colors",
+                        "text-center font-bold text-[10px] text-muted-foreground border-r border-slate-300 min-w-[100px] bg-muted/30 whitespace-normal leading-tight py-2 select-none transition-colors",
                         isEditing && "hover:bg-slate-200/80 cursor-pointer hover:outline-dashed hover:outline-1 hover:outline-primary/45 rounded"
                       )}
                       onDoubleClick={() => triggerFormulaEdit("subtotal_cost_scrap_formula")}
@@ -2416,7 +2495,7 @@ export default function FinalCostSheetView() {
                     <TableHead 
                       rowSpan={2} 
                       className={cn(
-                        "text-center font-bold text-[10px] text-muted-foreground border-r border-slate-200 min-w-[100px] bg-muted/30 whitespace-normal leading-tight py-2 select-none transition-colors",
+                        "text-center font-bold text-[10px] text-muted-foreground border-r border-slate-300 min-w-[100px] bg-muted/30 whitespace-normal leading-tight py-2 select-none transition-colors",
                         isEditing && "hover:bg-slate-200/80 cursor-pointer hover:outline-dashed hover:outline-1 hover:outline-primary/45 rounded"
                       )}
                       onDoubleClick={() => triggerFormulaEdit("rejection_cost_scrap_formula")}
@@ -2442,7 +2521,7 @@ export default function FinalCostSheetView() {
                     <TableHead 
                       rowSpan={2} 
                       className={cn(
-                        "text-center font-bold text-[10px] text-muted-foreground border-r border-slate-200 min-w-[90px] bg-muted/30 whitespace-normal leading-tight py-2 select-none transition-colors",
+                        "text-center font-bold text-[10px] text-muted-foreground border-r border-slate-300 min-w-[90px] bg-muted/30 whitespace-normal leading-tight py-2 select-none transition-colors",
                         isEditing && "hover:bg-slate-200/80 cursor-pointer hover:outline-dashed hover:outline-1 hover:outline-primary/45 rounded"
                       )}
                       onDoubleClick={() => triggerFormulaEdit("overheads_rm_formula")}
@@ -2468,7 +2547,7 @@ export default function FinalCostSheetView() {
                     <TableHead 
                       rowSpan={2} 
                       className={cn(
-                        "text-center font-bold text-[10px] text-muted-foreground border-r border-slate-200 min-w-[100px] bg-muted/30 whitespace-normal leading-tight py-2 select-none transition-colors",
+                        "text-center font-bold text-[10px] text-muted-foreground border-r border-slate-300 min-w-[100px] bg-muted/30 whitespace-normal leading-tight py-2 select-none transition-colors",
                         isEditing && "hover:bg-slate-200/80 cursor-pointer hover:outline-dashed hover:outline-1 hover:outline-primary/45 rounded"
                       )}
                       onDoubleClick={() => triggerFormulaEdit("grand_total_cost_rm_formula")}
@@ -2479,7 +2558,7 @@ export default function FinalCostSheetView() {
                     <TableHead 
                       rowSpan={2} 
                       className={cn(
-                        "text-center font-bold text-[10px] text-muted-foreground border-r border-slate-200 min-w-[100px] bg-muted/30 whitespace-normal leading-tight py-2 select-none transition-colors",
+                        "text-center font-bold text-[10px] text-muted-foreground border-r border-slate-300 min-w-[100px] bg-muted/30 whitespace-normal leading-tight py-2 select-none transition-colors",
                         isEditing && "hover:bg-slate-200/80 cursor-pointer hover:outline-dashed hover:outline-1 hover:outline-primary/45 rounded"
                       )}
                       onDoubleClick={() => triggerFormulaEdit("grand_total_cost_scrap_formula")}
@@ -2487,11 +2566,11 @@ export default function FinalCostSheetView() {
                     >
                       Grand Total<br />Cost (Scrap)
                     </TableHead>
-                    <TableHead rowSpan={2} className="text-center font-bold text-[10px] text-muted-foreground border-r border-slate-200 min-w-[95px] bg-muted/30 whitespace-normal leading-tight py-2">Selling<br />Price</TableHead>
+                    <TableHead rowSpan={2} className="text-center font-bold text-[10px] text-muted-foreground border-r border-slate-300 min-w-[95px] bg-muted/30 whitespace-normal leading-tight py-2">Selling<br />Price</TableHead>
                     <TableHead 
                       rowSpan={2} 
                       className={cn(
-                        "text-center font-bold text-[10px] text-muted-foreground border-r border-slate-200 min-w-[85px] bg-muted/30 whitespace-normal leading-tight py-2 select-none transition-colors",
+                        "text-center font-bold text-[10px] text-muted-foreground border-r border-slate-300 min-w-[85px] bg-muted/30 whitespace-normal leading-tight py-2 select-none transition-colors",
                         isEditing && "hover:bg-slate-200/80 cursor-pointer hover:outline-dashed hover:outline-1 hover:outline-primary/45 rounded"
                       )}
                       onDoubleClick={() => triggerFormulaEdit("profit_percent_formula")}
@@ -2502,7 +2581,7 @@ export default function FinalCostSheetView() {
                     <TableHead 
                       rowSpan={2} 
                       className={cn(
-                        "text-center font-bold text-[10px] text-muted-foreground border-r border-slate-200 min-w-[90px] bg-muted/30 whitespace-normal leading-tight py-2 select-none transition-colors",
+                        "text-center font-bold text-[10px] text-muted-foreground border-r border-slate-300 min-w-[90px] bg-muted/30 whitespace-normal leading-tight py-2 select-none transition-colors",
                         isEditing && "hover:bg-slate-200/80 cursor-pointer hover:outline-dashed hover:outline-1 hover:outline-primary/45 rounded"
                       )}
                       onDoubleClick={() => triggerFormulaEdit("profit_rs_formula")}
@@ -2513,7 +2592,7 @@ export default function FinalCostSheetView() {
                     <TableHead 
                       rowSpan={2} 
                       className={cn(
-                        "text-center font-bold text-[10px] text-muted-foreground border-r border-slate-200 min-w-[100px] bg-muted/30 whitespace-normal leading-tight py-2 select-none transition-colors",
+                        "text-center font-bold text-[10px] text-muted-foreground border-r border-slate-300 min-w-[100px] bg-muted/30 whitespace-normal leading-tight py-2 select-none transition-colors",
                         isEditing && "hover:bg-slate-200/80 cursor-pointer hover:outline-dashed hover:outline-1 hover:outline-primary/45 rounded"
                       )}
                       onDoubleClick={() => triggerFormulaEdit("raw_material_percent_formula")}
@@ -2543,49 +2622,43 @@ export default function FinalCostSheetView() {
 
                       if (hasMetadata) {
                         subCols.push(
-                          <TableHead key={`${proc.key}_sub_meta`} className="text-center font-bold text-[9px] text-muted-foreground border-r border-slate-200 min-w-[85px] bg-muted/20 whitespace-normal leading-tight py-2">
+                          <TableHead key={`${proc.key}_sub_meta`} className="text-center font-bold text-[9px] text-muted-foreground border-r border-slate-300 min-w-[85px] bg-muted/20 whitespace-normal leading-tight py-2">
                             Metadata
                           </TableHead>
                         );
                       }
                       if (hasCycleTime) {
                         subCols.push(
-                          <TableHead key={`${proc.key}_sub_ct`} className="text-center font-bold text-[9px] text-muted-foreground border-r border-slate-200 min-w-[95px] bg-muted/20 whitespace-normal leading-tight py-2">
+                          <TableHead key={`${proc.key}_sub_ct`} className="text-center font-bold text-[9px] text-muted-foreground border-r border-slate-300 min-w-[95px] bg-muted/20 whitespace-normal leading-tight py-2">
                             Cycle time in<br />seconds /<br />component
                           </TableHead>
                         );
                       }
                       if (proc.isSpecialMetrology) {
                         subCols.push(
-                          <TableHead key={`${proc.key}_sub_pq`} className="text-center font-bold text-[9px] text-muted-foreground border-r border-slate-200 min-w-[85px] bg-muted/20 whitespace-normal leading-tight py-2">
+                          <TableHead key={`${proc.key}_sub_pq`} className="text-center font-bold text-[9px] text-muted-foreground border-r border-slate-300 min-w-[85px] bg-muted/20 whitespace-normal leading-tight py-2">
                             Prod Qty
                           </TableHead>
                         );
                         subCols.push(
-                          <TableHead key={`${proc.key}_sub_cost`} className="text-center font-bold text-[9px] text-muted-foreground border-r border-slate-200 min-w-[85px] bg-muted/20 whitespace-normal leading-tight py-2">
+                          <TableHead key={`${proc.key}_sub_cost`} className="text-center font-bold text-[9px] text-muted-foreground border-r border-slate-300 min-w-[85px] bg-muted/20 whitespace-normal leading-tight py-2">
                             Cost
-                          </TableHead>
-                        );
-                      } else if (proc.isSpecialPacking) {
-                        subCols.push(
-                          <TableHead key={`${proc.key}_sub_mc`} className="text-center font-bold text-[9px] text-muted-foreground border-r border-slate-200 min-w-[85px] bg-muted/20 whitespace-normal leading-tight py-2">
-                            Mat Cost
                           </TableHead>
                         );
                       } else if (hasTooling) {
                         subCols.push(
-                          <TableHead key={`${proc.key}_sub_tc`} className="text-center font-bold text-[9px] text-muted-foreground border-r border-slate-200 min-w-[95px] bg-muted/20 whitespace-normal leading-tight py-2">
+                          <TableHead key={`${proc.key}_sub_tc`} className="text-center font-bold text-[9px] text-muted-foreground border-r border-slate-300 min-w-[95px] bg-muted/20 whitespace-normal leading-tight py-2">
                             Tooling cost /<br />component
                           </TableHead>
                         );
                       }
 
                       // Render custom include subheaders
-                      const customIncludes = (!proc.isStatic && (proc as any).customIncludes) || [];
+                      const customIncludes = ((proc as any).customIncludes) || [];
                       const checkedCustomIncludes = customIncludes.filter((ci: any) => ci.checked);
                       checkedCustomIncludes.forEach((ci: any) => {
                         subCols.push(
-                          <TableHead key={`${proc.key}_sub_custom_${ci.key}`} className="text-center font-bold text-[9px] text-muted-foreground border-r border-slate-200 min-w-[100px] bg-muted/20 whitespace-normal leading-tight py-2">
+                          <TableHead key={`${proc.key}_sub_custom_${ci.key}`} className="text-center font-bold text-[9px] text-muted-foreground border-r border-slate-300 min-w-[100px] bg-muted/20 whitespace-normal leading-tight py-2">
                             {ci.label}
                           </TableHead>
                         );
@@ -2593,7 +2666,7 @@ export default function FinalCostSheetView() {
                       const procDefaultFormula = proc.isSpecialMetrology
                         ? "[metrology_cost] / [production_quantity]"
                         : (proc.isSpecialPacking
-                          ? "[cycle_time] * [rate_sec] + [packing_material_cost]"
+                          ? "[cycle_time] * [rate_sec]"
                           : (proc.hasTooling
                             ? "[cycle_time] * [rate_sec] + [tooling_cost]"
                             : "[cycle_time] * [rate_sec]"));
@@ -2603,7 +2676,7 @@ export default function FinalCostSheetView() {
                         <TableHead 
                           key={`${proc.key}_sub_tot`} 
                           className={cn(
-                            "text-center font-bold text-[9px] text-muted-foreground border-r border-slate-200 min-w-[90px] bg-muted/20 whitespace-normal leading-tight py-2 select-none transition-colors",
+                            "text-center font-bold text-[9px] text-muted-foreground border-r-[3px] border-slate-300 min-w-[90px] bg-muted/20 whitespace-normal leading-tight py-2 select-none transition-colors",
                             isEditing && "hover:bg-slate-200/85 cursor-pointer hover:outline-dashed hover:outline-1 hover:outline-primary/45 rounded"
                           )}
                           onDoubleClick={() => triggerFormulaEdit(`${proc.key}_total_cost_formula`)}
@@ -2617,12 +2690,12 @@ export default function FinalCostSheetView() {
                   </TableRow>
 
                   {/* Machine Hour Rate Row 3 */}
-                  <TableRow className="bg-emerald-500/5 hover:bg-emerald-500/10 h-10 border-b border-slate-200 text-[11px]">
-                    <TableCell colSpan={3} className="font-extrabold text-[10px] uppercase text-muted-foreground border-r border-slate-200 text-left pl-4">
+                  <TableRow className="bg-emerald-500/5 hover:bg-emerald-500/10 h-10 border-b-[2px] border-slate-200 text-[11px]">
+                    <TableCell colSpan={3} className="font-extrabold text-[10px] uppercase text-muted-foreground border-r border-slate-300 text-left pl-4">
                       Machine hour rate (Cost / second)
                     </TableCell>
-                    <TableCell colSpan={6} className="border-r border-slate-200" />
-                    <TableCell className="text-center border-r border-slate-200 font-bold font-mono text-emerald-600">
+                    <TableCell colSpan={6} className="border-r border-slate-300" />
+                    <TableCell className="text-center border-r border-slate-300 font-bold font-mono text-emerald-600">
                       {isEditing ? (
                         <Input
                           value={columnRates.foundry_conversion_rate || "110"}
@@ -2633,20 +2706,22 @@ export default function FinalCostSheetView() {
                         columnRates.foundry_conversion_rate || "110"
                       )}
                     </TableCell>
-                    <TableCell className="border-r border-slate-200" />
+                    <TableCell className="border-r border-slate-300" />
                     {customColumns.filter(c => c.hasMetadata && !c.hasCycleTime && !c.hasTooling).map(col => (
-                      <TableCell key={`rate_meta_${col.key}`} className="border-r border-slate-200" />
+                      <TableCell key={`rate_meta_${col.key}`} className="border-r border-slate-300" />
                     ))}
                     {allProcesses.map(proc => {
                       const hasMetadata = !!proc.hasMetadata;
                       const hasCycleTime = proc.isStatic ? !proc.isSpecialMetrology : !!proc.hasCycleTime;
                       const hasTooling = proc.isStatic ? !!proc.hasTooling : !!proc.hasTooling;
-                      const cellSpan = (hasMetadata ? 1 : 0) + (hasCycleTime ? 1 : 0) + (hasTooling ? 1 : 0) + (proc.isSpecialMetrology ? 2 : 0) + (proc.isSpecialPacking ? 1 : 0);
+                      const customIncludes = ((proc as any).customIncludes) || [];
+                      const checkedCustomIncludes = customIncludes.filter((ci: any) => ci.checked);
+                      const colSpan = proc.isSpecialMetrology ? 3 : (proc.isSpecialPacking ? 2 : (hasMetadata ? 1 : 0) + (hasCycleTime ? 1 : 0) + (hasTooling ? 1 : 0) + checkedCustomIncludes.length + 1);
                       return (
                         <TableCell
                           key={`rate_${proc.key}`}
-                          colSpan={cellSpan + 1}
-                          className="text-center border-r border-slate-200 font-bold font-mono text-emerald-600"
+                          colSpan={colSpan}
+                          className="text-center border-r-[3px] border-slate-300 font-bold font-mono text-emerald-600"
                         >
                           {isEditing && !(proc.isStatic || !!(proc as any).linkedMachine) ? (
                             <div className="flex items-center justify-center gap-1">
@@ -2671,7 +2746,7 @@ export default function FinalCostSheetView() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {rows.map((row, rowIndex) => {
+                  {filteredRows.map((row, rowIndex) => {
                     const calcs = calculateRowFields(row);
                     const vals = row.values || {};
 
@@ -2684,8 +2759,8 @@ export default function FinalCostSheetView() {
                     const sellingPrice = parseFloat(vals.selling_price) || 0;
 
                     return (
-                      <TableRow key={row._id || rowIndex} className="hover:bg-muted/10 border-b border-slate-200 transition-colors duration-150">
-                        <TableCell className="p-3 border-r border-b border-slate-200 font-bold text-xs text-foreground uppercase">
+                      <TableRow key={row._id || rowIndex} className="hover:bg-muted/10 border-b-[2px] border-slate-200 transition-colors duration-150">
+                        <TableCell className="p-3 border-r border-slate-300 border-b-[2px] border-slate-200 font-bold text-xs text-foreground uppercase">
                           {isCellEditing(rowIndex, "partName") ? (
                             <EditableInput
                               value={row.partName}
@@ -2705,7 +2780,7 @@ export default function FinalCostSheetView() {
                             </span>
                           )}
                         </TableCell>
-                        <TableCell className="p-3 border-r border-b border-slate-200 font-mono text-xs">
+                        <TableCell className="p-3 border-r border-slate-300 border-b-[2px] border-slate-200 font-mono text-xs">
                           {isCellEditing(rowIndex, "partNumber") ? (
                             <EditableInput
                               value={row.partNumber}
@@ -2725,7 +2800,7 @@ export default function FinalCostSheetView() {
                             </span>
                           )}
                         </TableCell>
-                        <TableCell className="p-3 border-r border-b border-slate-200 text-xs">
+                        <TableCell className="p-3 border-r border-slate-300 border-b-[2px] border-slate-200 text-xs">
                           {isCellEditing(rowIndex, "materialName") ? (
                             <EditableSelect
                               value={row.materialName}
@@ -2747,7 +2822,7 @@ export default function FinalCostSheetView() {
                           )}
                         </TableCell>
  
-                        <TableCell className="p-3 border-r border-b border-slate-200 text-right">
+                        <TableCell className="p-3 border-r border-slate-300 border-b-[2px] border-slate-200 text-right">
                           {isCellEditing(rowIndex, "rough_casting_weight") ? (
                             <EditableInput
                               value={vals.rough_casting_weight || "0"}
@@ -2768,7 +2843,7 @@ export default function FinalCostSheetView() {
                             </span>
                           )}
                         </TableCell>
-                        <TableCell className="p-3 border-r border-b border-slate-200 text-right">
+                        <TableCell className="p-3 border-r border-slate-300 border-b-[2px] border-slate-200 text-right">
                           {isCellEditing(rowIndex, "finish_weight") ? (
                             <EditableInput
                               value={vals.finish_weight || "0"}
@@ -2790,33 +2865,33 @@ export default function FinalCostSheetView() {
                           )}
                         </TableCell>
 
-                        <TableCell className="p-3 border-r border-b border-slate-200 text-right font-mono font-semibold text-muted-foreground">
+                        <TableCell className="p-3 border-r border-slate-300 border-b-[2px] border-slate-200 text-right font-mono font-semibold text-muted-foreground">
                           {calcs.ratePerKg.toFixed(2)}
                         </TableCell>
-                        <TableCell className="p-3 border-r border-b border-slate-200 text-right font-mono font-semibold text-muted-foreground">
+                        <TableCell className="p-3 border-r border-slate-300 border-b-[2px] border-slate-200 text-right font-mono font-semibold text-muted-foreground">
                           {calcs.scrapRatePerKg.toFixed(2)}
                         </TableCell>
 
                         <TableCell 
-                          className="p-3 border-r border-b border-slate-200 text-right font-mono font-bold text-foreground"
+                          className="p-3 border-r border-slate-300 border-b-[2px] border-slate-200 text-right font-mono font-bold text-foreground"
                           title={`Formula: ${formulas.origin_raw_material_cost_component}`}
                         >
                           {calcs.originRawComponentCost.toFixed(2)}
                         </TableCell>
                         <TableCell 
-                          className="p-3 border-r border-b border-slate-200 text-right font-mono font-bold text-foreground"
+                          className="p-3 border-r border-slate-300 border-b-[2px] border-slate-200 text-right font-mono font-bold text-foreground"
                           title={`Formula: ${formulas.scrap_raw_material_cost_component}`}
                         >
                           {calcs.scrapRawComponentCost.toFixed(2)}
                         </TableCell>
                         <TableCell 
-                          className="p-3 border-r border-b border-slate-200 text-right font-mono font-bold text-sky-600 dark:text-sky-400"
+                          className="p-3 border-r border-slate-300 border-b-[2px] border-slate-200 text-right font-mono font-bold text-sky-600 dark:text-sky-400"
                           title={`Formula: ${formulas.foundry_conversion_cost_component}`}
                         >
                           {calcs.foundryConversionCost.toFixed(2)}
                         </TableCell>
 
-                        <TableCell className="p-3 border-r border-b border-slate-200 text-right">
+                        <TableCell className="p-3 border-r border-slate-300 border-b-[2px] border-slate-200 text-right">
                           {isCellEditing(rowIndex, "semi_machining_cost") ? (
                             <EditableInput
                               value={vals.semi_machining_cost || "0"}
@@ -2841,7 +2916,7 @@ export default function FinalCostSheetView() {
                         {customColumns.filter(c => c.hasMetadata && !c.hasCycleTime && !c.hasTooling).map(col => {
                           const fieldKey = `custom_${col.key}_metadata`;
                           return (
-                            <TableCell key={col.key} className="p-2 border-r border-b border-slate-200 text-center">
+                            <TableCell key={col.key} className="p-2 border-r border-slate-300 border-b-[2px] border-slate-200 text-center">
                               {isCellEditing(rowIndex, fieldKey) ? (
                                 <EditableInput
                                   value={vals[`${col.key}_metadata`] || ""}
@@ -2880,7 +2955,7 @@ export default function FinalCostSheetView() {
 
                           if (hasMetadata) {
                             cells.push(
-                              <TableCell key={`${proc.key}_meta_val`} className={cn("p-2 border-r border-b border-slate-200 text-center align-middle", hasLoop && !inLoop && "bg-muted/10 opacity-40")}>
+                              <TableCell key={`${proc.key}_meta_val`} className={cn("p-2 border-r border-slate-300 border-b-[2px] border-slate-200 text-center align-middle", hasLoop && !inLoop && "bg-muted/10")}>
                                 {!hasLoop ? (
                                   isCellEditing(rowIndex, `${proc.key}_metadata`) ? (
                                     <EditableInput
@@ -2941,7 +3016,7 @@ export default function FinalCostSheetView() {
 
                            if (hasCycleTime) {
                             cells.push(
-                              <TableCell key={`${proc.key}_ct_val`} className={cn("p-2 border-r border-b border-slate-200 text-center align-middle", hasLoop && !inLoop && "bg-muted/10 opacity-40")}>
+                              <TableCell key={`${proc.key}_ct_val`} className={cn("p-2 border-r border-slate-300 border-b-[2px] border-slate-200 text-center align-middle", hasLoop && !inLoop && "bg-muted/10")}>
                                 {!hasLoop ? (
                                   isCellEditing(rowIndex, `${proc.key}_cycle_time`) ? (
                                     <EditableInput
@@ -3003,12 +3078,12 @@ export default function FinalCostSheetView() {
                           }
 
                           // Render custom includes cells
-                          const customIncludes = (!proc.isStatic && (proc as any).customIncludes) || [];
+                          const customIncludes = ((proc as any).customIncludes) || [];
                           const checkedCustomIncludes = customIncludes.filter((ci: any) => ci.checked);
                           checkedCustomIncludes.forEach((ci: any) => {
                             const fieldKey = `${proc.key}_custom_${ci.key}`;
                             cells.push(
-                              <TableCell key={`${proc.key}_custom_${ci.key}_val`} className={cn("p-2 border-r border-b border-slate-200 text-center align-middle", hasLoop && !inLoop && "bg-muted/10 opacity-40")}>
+                              <TableCell key={`${proc.key}_custom_${ci.key}_val`} className={cn("p-2 border-r border-slate-300 border-b-[2px] border-slate-200 text-center align-middle", hasLoop && !inLoop && "bg-muted/10")}>
                                 {!hasLoop ? (
                                   isCellEditing(rowIndex, fieldKey) ? (
                                     <EditableInput
@@ -3071,7 +3146,7 @@ export default function FinalCostSheetView() {
 
                           if (proc.isSpecialMetrology) {
                             cells.push(
-                              <TableCell key={`${proc.key}_pq_val`} className={cn("p-2 border-r border-b border-slate-200 text-center align-middle", hasLoop && !inLoop && "bg-muted/10 opacity-40")}>
+                              <TableCell key={`${proc.key}_pq_val`} className={cn("p-2 border-r border-slate-300 border-b-[2px] border-slate-200 text-center align-middle", hasLoop && !inLoop && "bg-muted/10")}>
                                 {!hasLoop ? (
                                   isCellEditing(rowIndex, "metrology_production_quantity") ? (
                                     <EditableInput
@@ -3129,7 +3204,7 @@ export default function FinalCostSheetView() {
                               </TableCell>
                             );
                             cells.push(
-                              <TableCell key={`${proc.key}_cost_val`} className={cn("p-2 border-r border-b border-slate-200 text-center align-middle", hasLoop && !inLoop && "bg-muted/10 opacity-40")}>
+                              <TableCell key={`${proc.key}_cost_val`} className={cn("p-2 border-r border-slate-300 border-b-[2px] border-slate-200 text-center align-middle", hasLoop && !inLoop && "bg-muted/10")}>
                                 {!hasLoop ? (
                                   isCellEditing(rowIndex, "metrology_cost") ? (
                                     <EditableInput
@@ -3186,68 +3261,9 @@ export default function FinalCostSheetView() {
                                 )}
                               </TableCell>
                             );
-                          } else if (proc.isSpecialPacking) {
-                            cells.push(
-                              <TableCell key={`${proc.key}_mat_val`} className={cn("p-2 border-r border-b border-slate-200 text-center align-middle", hasLoop && !inLoop && "bg-muted/10 opacity-40")}>
-                                {!hasLoop ? (
-                                  isCellEditing(rowIndex, "packing_cost_packing_material_cost") ? (
-                                    <EditableInput
-                                      value={vals.packing_cost_packing_material_cost || "0"}
-                                      onChange={(val) => handleCellChange(rowIndex, "packing_cost_packing_material_cost", val)}
-                                      onClose={() => setActiveEditCell(null)}
-                                      className="h-8 w-16 text-center text-xs font-mono bg-background border-input rounded-lg text-right mx-auto"
-                                    />
-                                  ) : (
-                                    <span
-                                      onDoubleClick={() => canEditProc && setActiveEditCell({ rowIndex, fieldKey: "packing_cost_packing_material_cost" })}
-                                      className={cn(
-                                        "block w-full py-1 px-1 font-mono text-muted-foreground",
-                                        canEditProc && "hover:outline-dashed hover:outline-1 hover:outline-primary/50 cursor-pointer rounded"
-                                      )}
-                                    >
-                                      {parseFloat(vals.packing_cost_packing_material_cost || "0").toFixed(2)}
-                                    </span>
-                                  )
-                                ) : !inLoop ? (
-                                  <span className="text-[10px] text-muted-foreground font-light italic">Skipped</span>
-                                ) : (
-                                  <div className="flex flex-col gap-1.5 justify-center py-1">
-                                    {loopIndices.map((idx, sIdx) => {
-                                      const fieldKey = `${proc.key}_${idx}_packing_material_cost`;
-                                      return (
-                                        <div key={idx} className={cn("w-full flex items-center justify-center gap-1.5", sIdx > 0 && "border-t border-slate-200/50 pt-1.5")}>
-                                          {isCellEditing(rowIndex, fieldKey) ? (
-                                            <div className="flex flex-col items-center">
-                                              <span className="text-[8px] text-primary/60 font-semibold mb-0.5">Visit {sIdx + 1}</span>
-                                              <EditableInput
-                                                value={vals[`${proc.key}_${idx}_packing_material_cost`] || "0"}
-                                                onChange={(val) => handleCellChange(rowIndex, `${proc.key}_${idx}_packing_material_cost`, val)}
-                                                onClose={() => setActiveEditCell(null)}
-                                                className="h-8 w-16 text-center text-xs font-mono bg-background border-input rounded-lg text-right"
-                                              />
-                                            </div>
-                                          ) : (
-                                            <div 
-                                              onDoubleClick={() => canEditProc && setActiveEditCell({ rowIndex, fieldKey })}
-                                              className={cn(
-                                                "flex flex-col items-center w-full py-0.5",
-                                                canEditProc && "hover:outline-dashed hover:outline-1 hover:outline-primary/50 cursor-pointer rounded"
-                                              )}
-                                            >
-                                              <span className="text-[8px] text-muted-foreground/60 font-semibold">V{sIdx + 1}</span>
-                                              <span className="font-mono text-muted-foreground">{parseFloat(vals[`${proc.key}_${idx}_packing_material_cost`] || "0").toFixed(2)}</span>
-                                            </div>
-                                          )}
-                                        </div>
-                                      );
-                                    })}
-                                  </div>
-                                )}
-                              </TableCell>
-                            );
                           } else if (hasTooling) {
                             cells.push(
-                              <TableCell key={`${proc.key}_tc_val`} className={cn("p-2 border-r border-b border-slate-200 text-center align-middle", hasLoop && !inLoop && "bg-muted/10 opacity-40")}>
+                              <TableCell key={`${proc.key}_tc_val`} className={cn("p-2 border-r border-slate-300 border-b-[2px] border-slate-200 text-center align-middle", hasLoop && !inLoop && "bg-muted/10")}>
                                 {!hasLoop ? (
                                   isCellEditing(rowIndex, `${proc.key}_tooling_cost`) ? (
                                     <EditableInput
@@ -3309,7 +3325,7 @@ export default function FinalCostSheetView() {
                           }
 
                           cells.push(
-                            <TableCell key={`${proc.key}_tot_val`} className="p-2 border-r border-b border-slate-200 text-right font-mono font-bold text-foreground">
+                            <TableCell key={`${proc.key}_tot_val`} className="p-2 border-r-[3px] border-b-[2px] border-slate-200 text-right font-mono font-bold text-foreground">
                               {calcs.evaluatedProcesses[proc.key].toFixed(2)}
                             </TableCell>
                           );
@@ -3318,45 +3334,45 @@ export default function FinalCostSheetView() {
                         })}
 
                         <TableCell 
-                          className="p-3 border-r border-b border-slate-200 text-right font-mono font-extrabold text-foreground bg-slate-50/5"
+                          className="p-3 border-r border-slate-300 border-b-[2px] border-slate-200 text-right font-mono font-extrabold text-foreground bg-slate-50/5"
                           title={`Formula: ${formulas.subtotal_cost_rm}`}
                         >
                           {calcs.subTotalRaw.toFixed(2)}
                         </TableCell>
                         <TableCell 
-                          className="p-3 border-r border-b border-slate-200 text-right font-mono font-extrabold text-foreground bg-slate-50/5"
+                          className="p-3 border-r border-slate-300 border-b-[2px] border-slate-200 text-right font-mono font-extrabold text-foreground bg-slate-50/5"
                           title={`Formula: ${formulas.subtotal_cost_scrap}`}
                         >
                           {calcs.subTotalScrap.toFixed(2)}
                         </TableCell>
                         <TableCell 
-                          className="p-3 border-r border-b border-slate-200 text-right font-mono font-bold text-muted-foreground bg-slate-50/5"
+                          className="p-3 border-r border-slate-300 border-b-[2px] border-slate-200 text-right font-mono font-bold text-muted-foreground bg-slate-50/5"
                           title={`Formula: ${formulas.rejection_cost_scrap}`}
                         >
                           {calcs.rejectionScrap.toFixed(2)}
                         </TableCell>
  
                         <TableCell 
-                          className="p-3 border-r border-b border-slate-200 text-right font-mono font-bold text-muted-foreground"
+                          className="p-3 border-r border-slate-300 border-b-[2px] border-slate-200 text-right font-mono font-bold text-muted-foreground"
                           title={`Formula: ${formulas.overheads_rm}`}
                         >
                           {calcs.overheads.toFixed(2)}
                         </TableCell>
  
                         <TableCell 
-                          className="p-3 border-r border-b border-slate-200 text-right font-mono font-black text-primary bg-primary/5"
+                          className="p-3 border-r border-slate-300 border-b-[2px] border-slate-200 text-right font-mono font-black text-primary bg-primary/5"
                           title={`Formula: ${formulas.grand_total_cost_rm}`}
                         >
                           {calcs.grandTotalRaw.toFixed(2)}
                         </TableCell>
                         <TableCell 
-                          className="p-3 border-r border-b border-slate-200 text-right font-mono font-black text-primary bg-primary/5"
+                          className="p-3 border-r border-slate-300 border-b-[2px] border-slate-200 text-right font-mono font-black text-primary bg-primary/5"
                           title={`Formula: ${formulas.grand_total_cost_scrap}`}
                         >
                           {calcs.grandTotalScrap.toFixed(2)}
                         </TableCell>
  
-                        <TableCell className="p-3 border-r border-b border-slate-200 text-right">
+                        <TableCell className="p-3 border-r border-slate-300 border-b-[2px] border-slate-200 text-right">
                           {isCellEditing(rowIndex, "selling_price") ? (
                             <EditableInput
                               value={vals.selling_price || "0"}
@@ -3379,7 +3395,7 @@ export default function FinalCostSheetView() {
                         </TableCell>
                         <TableCell 
                           className={cn(
-                            "p-3 border-r border-b border-slate-200 text-right font-mono font-extrabold",
+                            "p-3 border-r border-slate-300 border-b-[2px] border-slate-200 text-right font-mono font-extrabold",
                             calcs.profitPercent >= 0 ? "text-green-600 dark:text-green-400" : "text-red-500"
                           )}
                           title={`Formula: ${formulas.profit_percent}`}
@@ -3388,7 +3404,7 @@ export default function FinalCostSheetView() {
                         </TableCell>
                         <TableCell 
                           className={cn(
-                            "p-3 border-r border-b border-slate-200 text-right font-mono font-extrabold",
+                            "p-3 border-r border-slate-300 border-b-[2px] border-slate-200 text-right font-mono font-extrabold",
                             calcs.profitRs >= 0 ? "text-green-600 dark:text-green-400" : "text-red-500"
                           )}
                           title={`Formula: ${formulas.profit_rs}`}
@@ -3397,20 +3413,20 @@ export default function FinalCostSheetView() {
                         </TableCell>
  
                         <TableCell 
-                          className="p-3 border-r border-b border-slate-200 text-right font-mono font-semibold text-slate-500"
+                          className="p-3 border-r border-slate-300 border-b-[2px] border-slate-200 text-right font-mono font-semibold text-slate-500"
                           title={`Formula: ${formulas.raw_material_percent}`}
                         >
                           {calcs.rawMaterialPercent.toFixed(2)}%
                         </TableCell>
                         <TableCell 
-                          className="p-3 border-r border-b border-slate-200 text-right font-mono font-semibold text-slate-500"
+                          className="p-3 border-r border-slate-300 border-b-[2px] border-slate-200 text-right font-mono font-semibold text-slate-500"
                           title={`Formula: ${formulas.foundry_conversion_percent}`}
                         >
                           {calcs.foundryConversionPercent.toFixed(2)}%
                         </TableCell>
 
                         {isEditing && (
-                          <TableCell className="p-2 border-l border-b border-slate-200 text-center">
+                          <TableCell className="p-2 border-l border-b-[2px] border-slate-200 text-center">
                             <div className="flex items-center justify-center gap-1">
                               <Popover>
                                 <PopoverTrigger asChild>
@@ -3447,15 +3463,29 @@ export default function FinalCostSheetView() {
                                       ) : (
                                         <div className="flex flex-wrap items-center gap-2">
                                           {row.selectedLoop.map((procKey, idx) => {
-                                            const proc = PROCESS_CONFIGS.find(p => p.key === procKey);
+                                            const proc = allProcesses.find(p => p.key === procKey);
                                             return (
                                               <div key={idx} className="flex items-center gap-1.5 group text-[10px]">
                                                 <div className="flex items-center h-7 bg-background border rounded-lg shadow-sm border-primary/20 hover:border-primary transition-all pr-0 overflow-hidden">
                                                   <div className="bg-primary text-primary-foreground px-2 h-full flex items-center justify-center font-bold border-r">
                                                     S{idx + 1}
                                                   </div>
-                                                  <div className="px-2 font-semibold whitespace-nowrap">
+                                                  <div className="px-2 font-semibold whitespace-nowrap flex items-center gap-2 h-full">
                                                     {proc?.name}
+                                                    <Select
+                                                      value={vals[`${procKey}_${idx}_assigned_user`] || "none"}
+                                                      onValueChange={(val) => handleCellChange(rowIndex, `${procKey}_${idx}_assigned_user`, val === "none" ? "" : val)}
+                                                    >
+                                                      <SelectTrigger className="h-5 text-[9px] w-[100px] border-none bg-muted/30 hover:bg-muted/50 p-1 font-normal text-muted-foreground">
+                                                        <SelectValue placeholder="Assign Operator" />
+                                                      </SelectTrigger>
+                                                      <SelectContent>
+                                                        <SelectItem value="none" className="text-[10px] italic">No Assigned Operator</SelectItem>
+                                                        {fcsUsers.map(u => (
+                                                          <SelectItem key={u._id} value={u._id} className="text-[10px]">{u.name}</SelectItem>
+                                                        ))}
+                                                      </SelectContent>
+                                                    </Select>
                                                   </div>
                                                   <button
                                                     type="button"
@@ -3473,7 +3503,7 @@ export default function FinalCostSheetView() {
                                                 </div>
                                                 {idx < (row.selectedLoop || []).length - 1 && (
                                                   <div className="text-muted-foreground/40 font-bold text-xs">
-                                                    â†’
+                                                    &rarr;
                                                   </div>
                                                 )}
                                               </div>
@@ -3555,7 +3585,16 @@ export default function FinalCostSheetView() {
 
 
       {/* Add Part Dialog */}
-      <Dialog open={showAddPartModal} onOpenChange={setShowAddPartModal}>
+      <Dialog open={showAddPartModal} onOpenChange={(open) => {
+        setShowAddPartModal(open);
+        if (!open) {
+          setNewPartName("");
+          setNewPartNumber("");
+          setNewPartMaterial("");
+          setNewPartLoop([]);
+          setNewPartLoopUsers({});
+        }
+      }}>
         <DialogContent className="sm:max-w-[420px] bg-background border shadow-2xl rounded-2xl p-6">
           <DialogHeader>
             <DialogTitle className="text-md font-bold">Add Part Row</DialogTitle>
@@ -3567,24 +3606,70 @@ export default function FinalCostSheetView() {
           <div className="py-4 space-y-3">
             <div className="flex flex-col gap-1">
               <Label htmlFor="part-name-input" className="text-xs text-muted-foreground">Part Name</Label>
-              <Input
-                id="part-name-input"
-                value={newPartName}
-                onChange={(e) => setNewPartName(e.target.value)}
-                placeholder="e.g. BUSH"
-                className="h-9 text-xs"
-                autoFocus
-              />
+              <div className="relative">
+                <Input
+                  id="part-name-input"
+                  value={newPartName}
+                  onChange={(e) => {
+                    setNewPartName(e.target.value);
+                    setPartNameOpen(true);
+                  }}
+                  onFocus={() => setPartNameOpen(true)}
+                  onBlur={() => setTimeout(() => setPartNameOpen(false), 200)}
+                  placeholder="e.g. BUSH"
+                  className="h-9 text-xs"
+                  autoFocus
+                />
+                {partNameOpen && newPartName.trim().length > 0 && allPartNames.filter(n => n.toLowerCase().includes(newPartName.toLowerCase()) && n !== newPartName).length > 0 && (
+                  <div className="absolute z-50 w-full mt-1 bg-background border border-slate-200 shadow-xl rounded-xl max-h-48 overflow-y-auto custom-scrollbar p-1">
+                    {allPartNames.filter(n => n.toLowerCase().includes(newPartName.toLowerCase()) && n !== newPartName).map(name => (
+                      <div
+                        key={name}
+                        onClick={() => {
+                          setNewPartName(name);
+                          setPartNameOpen(false);
+                        }}
+                        className="px-2.5 py-1.5 hover:bg-muted/60 text-foreground cursor-pointer text-xs font-semibold rounded-lg transition-colors"
+                      >
+                        {name}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
             <div className="flex flex-col gap-1">
               <Label htmlFor="part-number-input" className="text-xs text-muted-foreground">Part Number</Label>
-              <Input
-                id="part-number-input"
-                value={newPartNumber}
-                onChange={(e) => setNewPartNumber(e.target.value)}
-                placeholder="e.g. 5900 130 054"
-                className="h-9 text-xs"
-              />
+              <div className="relative">
+                <Input
+                  id="part-number-input"
+                  value={newPartNumber}
+                  onChange={(e) => {
+                    setNewPartNumber(e.target.value);
+                    setPartNumberOpen(true);
+                  }}
+                  onFocus={() => setPartNumberOpen(true)}
+                  onBlur={() => setTimeout(() => setPartNumberOpen(false), 200)}
+                  placeholder="e.g. 5900 130 054"
+                  className="h-9 text-xs"
+                />
+                {partNumberOpen && newPartNumber.trim().length > 0 && allPartNumbers.filter(n => n.toLowerCase().includes(newPartNumber.toLowerCase()) && n !== newPartNumber).length > 0 && (
+                  <div className="absolute z-50 w-full mt-1 bg-background border border-slate-200 shadow-xl rounded-xl max-h-48 overflow-y-auto custom-scrollbar p-1">
+                    {allPartNumbers.filter(n => n.toLowerCase().includes(newPartNumber.toLowerCase()) && n !== newPartNumber).map(num => (
+                      <div
+                        key={num}
+                        onClick={() => {
+                          setNewPartNumber(num);
+                          setPartNumberOpen(false);
+                        }}
+                        className="px-2.5 py-1.5 hover:bg-muted/60 text-foreground cursor-pointer text-xs font-semibold rounded-lg transition-colors"
+                      >
+                        {num}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
             <div className="flex flex-col gap-1">
               <Label htmlFor="part-material-select" className="text-xs text-muted-foreground">Material Name</Label>
@@ -3678,15 +3763,29 @@ export default function FinalCostSheetView() {
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
                     {newPartLoop.map((procKey, index) => {
-                      const proc = PROCESS_CONFIGS.find(p => p.key === procKey);
+                      const proc = allProcesses.find(p => p.key === procKey);
                       return (
                         <div key={`${procKey}-${index}`} className="flex items-center gap-1.5 group">
                           <div className="flex items-center h-7 bg-background border rounded-lg shadow-sm border-primary/20 hover:border-primary transition-all pr-0 overflow-hidden text-[10px]">
                             <div className="bg-primary text-primary-foreground px-2 h-full flex items-center justify-center font-bold border-r">
                               S{index + 1}
                             </div>
-                            <div className="px-2 font-semibold whitespace-nowrap">
+                            <div className="px-2 font-semibold whitespace-nowrap flex items-center gap-2 h-full">
                               {proc?.name}
+                              <Select
+                                value={newPartLoopUsers[index] || "none"}
+                                onValueChange={(val) => setNewPartLoopUsers(prev => ({...prev, [index]: val === "none" ? "" : val}))}
+                              >
+                                <SelectTrigger className="h-5 text-[9px] w-[100px] border-none bg-muted/30 hover:bg-muted/50 p-1 font-normal text-muted-foreground">
+                                  <SelectValue placeholder="Assign Operator" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="none" className="text-[10px] italic">No Assigned Operator</SelectItem>
+                                  {fcsUsers.map(u => (
+                                    <SelectItem key={u._id} value={u._id} className="text-[10px]">{u.name}</SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
                             </div>
                             <button
                               type="button"
@@ -3703,7 +3802,7 @@ export default function FinalCostSheetView() {
                           </div>
                           {index < newPartLoop.length - 1 && (
                             <div className="text-muted-foreground/40 font-bold text-xs">
-                              â†’
+                              &rarr;
                             </div>
                           )}
                         </div>
@@ -3718,6 +3817,7 @@ export default function FinalCostSheetView() {
           <DialogFooter className="gap-2">
             <Button variant="ghost" onClick={() => {
               setNewPartLoop([]);
+              setNewPartLoopUsers({});
               setShowAddPartModal(false);
             }} className="h-9 text-xs rounded-xl">Cancel</Button>
             <Button onClick={handleAddPartRow} className="h-9 text-xs font-bold rounded-xl">Add Row</Button>

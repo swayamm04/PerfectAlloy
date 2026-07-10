@@ -66,9 +66,13 @@ interface Row {
   assignedUsers?: any[];
 }
 
-export default function SalaryCapitalChargesView() {
+interface CapitalInvestmentsViewProps {
+  type: "operators" | "equipments";
+}
+
+export default function CapitalInvestmentsView({ type }: CapitalInvestmentsViewProps) {
   const { user: currentUser } = useAuth();
-  const [activeTab, setActiveTab] = useState<"operators" | "equipments">("operators");
+  const activeTab = type;
   const [columns, setColumns] = useState<Column[]>([]);
   const [rows, setRows] = useState<Row[]>([]);
   const [loading, setLoading] = useState(true);
@@ -614,15 +618,14 @@ export default function SalaryCapitalChargesView() {
     setColumns(updatedCols);
   };
 
-  // Handle Tab Switch (set isInitialLoad to true to prevent auto-saves on mounting)
-  const handleTabChange = (val: "operators" | "equipments") => {
-    if (val === activeTab) return;
+  // Tab Switch logic removed as it's now controlled by props
+  useEffect(() => {
     setEditingRowIndex(null);
     setBackupRow(null);
     setIsEditingPowerVal(false);
     isInitialLoad.current = true;
-    setActiveTab(val);
-  };
+    fetchTableData();
+  }, [type]);
 
   const exportToExcel = () => {
     if (evaluatedRows.length === 0 || columns.length === 0) return;
@@ -771,27 +774,14 @@ export default function SalaryCapitalChargesView() {
         <div>
           <h1 className="text-xl font-extrabold tracking-tight text-foreground flex items-center gap-2">
             <Calculator className="h-5.5 w-5.5 text-primary" />
-            Salary & Capital Charges
+            {isOperators ? "Operators Salary Configuration" : "Equipment Investment"}
           </h1>
           <p className="text-muted-foreground mt-0.5 text-xs">
-            Configure payroll parameters and capital investment tables using an interactive spreadsheet layout.
+            {isOperators ? "Configure payroll parameters and designations." : "Configure capital investment tables."}
           </p>
         </div>
         
         <div className="flex flex-wrap items-center gap-2">
-          {/* Tab Selector Dropdown in premium inline button style */}
-          <Select value={activeTab} onValueChange={handleTabChange}>
-            <SelectTrigger className="h-8 w-fit gap-2 bg-card border border-muted hover:bg-muted/15 font-bold shadow-sm focus:ring-1 focus:ring-primary rounded-xl px-3 text-xs select-none">
-              <span className="text-[10px] font-extrabold text-muted-foreground uppercase tracking-wider select-none shrink-0">Select Sheet:</span>
-              <span className="text-foreground font-extrabold text-xs select-none mr-1">
-                <SelectValue placeholder="Select Sheet" />
-              </span>
-            </SelectTrigger>
-            <SelectContent className="bg-popover border shadow-lg rounded-lg">
-              <SelectItem value="operators" className="text-xs font-semibold">Operators</SelectItem>
-              <SelectItem value="equipments" className="text-xs font-semibold">Equipments</SelectItem>
-            </SelectContent>
-          </Select>
 
           <DropdownMenu>
             <DropdownMenuTrigger asChild>

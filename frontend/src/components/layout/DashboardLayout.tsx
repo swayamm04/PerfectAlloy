@@ -27,7 +27,8 @@ export const DashboardLayout = ({
         pathname !== "/" && 
         pathname !== "/users" && 
         pathname !== "/settings" && 
-        pathname !== "/salary-capital-charges" &&
+        pathname !== "/capital-investments/operators" &&
+        pathname !== "/capital-investments/equipments" &&
         pathname !== "/machine-hour-rate" &&
         pathname !== "/material-rate" &&
         pathname !== "/final-cost-sheet" &&
@@ -36,7 +37,8 @@ export const DashboardLayout = ({
         router.push("/");
       } else if (
         user.module === "admin" && (
-          pathname === "/salary-capital-charges" ||
+          pathname === "/capital-investments/operators" ||
+          pathname === "/capital-investments/equipments" ||
           pathname === "/machine-hour-rate" ||
           pathname === "/material-rate" ||
           pathname === "/final-cost-sheet" ||

@@ -36,6 +36,10 @@ const finalCostSheetSchema = mongoose.Schema(
     customColumns: {
       type: Array,
       default: []
+    },
+    deletedStaticColumns: {
+      type: Array,
+      default: []
     }
   },
   {

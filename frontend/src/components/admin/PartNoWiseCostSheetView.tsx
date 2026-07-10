@@ -33,6 +33,12 @@ interface CostSheetRow {
   values: Record<string, string>;
 }
 
+interface CustomIncludeOption {
+  key: string;
+  label: string;
+  checked: boolean;
+}
+
 interface CustomColumn {
   key: string;
   name: string;
@@ -40,6 +46,8 @@ interface CustomColumn {
   hasCycleTime?: boolean;
   hasTooling?: boolean;
   defaultRate: number;
+  customIncludes?: CustomIncludeOption[];
+  linkedMachine?: string;
 }
 
 interface CostSheetData {
@@ -47,6 +55,7 @@ interface CostSheetData {
   month: string; // YYYY-MM
   rows: CostSheetRow[];
   customColumns?: CustomColumn[];
+  deletedStaticColumns?: string[];
 }
 
 interface MaterialRateRow {
@@ -266,25 +275,50 @@ export default function PartNoWiseCostSheetView() {
 
   const allProcesses = useMemo(() => {
     const customCols = activeDocument?.customColumns || [];
+    const deletedCols = activeDocument?.deletedStaticColumns || [];
+    
+    const staticOverrides = new Map<string, any>();
+    const pureCustomCols: any[] = [];
+
+    customCols.forEach(c => {
+      if (PROCESS_CONFIGS.some(p => p.key === c.key)) {
+        staticOverrides.set(c.key, c);
+      } else {
+        pureCustomCols.push(c);
+      }
+    });
+
+    const activeStaticProcesses = PROCESS_CONFIGS
+      .filter(p => !deletedCols.includes(p.key))
+      .map(p => {
+        const override = staticOverrides.get(p.key);
+        return {
+          ...p,
+          name: override ? override.name : p.name,
+          hasCycleTime: override ? !!override.hasCycleTime : !p.isSpecialMetrology,
+          hasTooling: override ? !!override.hasTooling : !!p.hasTooling,
+          customIncludes: override ? override.customIncludes || [] : [],
+          linkedMachine: override ? override.linkedMachine : undefined,
+          isStatic: true,
+          hasMetadata: false,
+        };
+      });
+
     return [
-      ...PROCESS_CONFIGS.map(p => ({
-        ...p,
-        isStatic: true,
-        hasMetadata: false,
-        hasCycleTime: !p.isSpecialMetrology,
-        hasTooling: !!p.hasTooling
-      })),
-      ...customCols.filter(c => c.hasCycleTime || c.hasTooling).map(c => ({
+      ...activeStaticProcesses,
+      ...pureCustomCols.map(c => ({
         key: c.key,
         name: c.name,
-        defaultRate: 0,
+        defaultRate: c.defaultRate || 0,
         isStatic: false,
         hasMetadata: !!c.hasMetadata,
         hasTooling: !!c.hasTooling,
         hasCycleTime: !!c.hasCycleTime,
         isSpecialMetrology: false,
         isSpecialPacking: false,
-        dbMachine: ""
+        dbMachine: "",
+        customIncludes: c.customIncludes || [],
+        linkedMachine: c.linkedMachine
       }))
     ];
   }, [activeDocument]);
@@ -419,7 +453,7 @@ export default function PartNoWiseCostSheetView() {
               metrology_cost: metrologyCost,
               production_quantity: prodQty
             };
-            const customIncludes = (!(proc as any).isStatic && (proc as any).customIncludes) || [];
+            const customIncludes = ((proc as any).customIncludes) || [];
             customIncludes.forEach((ci: any) => {
               if (ci.checked) {
                 visitVars[ci.key] = parseFloat(vals[`${proc.key}_custom_${ci.key}`]) || 0;
@@ -444,7 +478,7 @@ export default function PartNoWiseCostSheetView() {
           metrology_cost: metrologyCost,
           production_quantity: prodQty
         };
-        const customIncludes2 = (!(proc as any).isStatic && (proc as any).customIncludes) || [];
+        const customIncludes2 = ((proc as any).customIncludes) || [];
         customIncludes2.forEach((ci: any) => {
           if (ci.checked) {
             visitVars[ci.key] = parseFloat(vals[`${proc.key}_custom_${ci.key}`]) || 0;
@@ -457,7 +491,7 @@ export default function PartNoWiseCostSheetView() {
       processCostsSum += cost;
       vars[proc.key] = cost; // Add individual process cost as a variable
 
-      const ciList = (!(proc as any).isStatic && (proc as any).customIncludes) || [];
+      const ciList = ((proc as any).customIncludes) || [];
       ciList.forEach((ci: any) => {
         if (ci.checked) {
           vars[`${proc.key}_custom_${ci.key}`] = parseFloat(vals[`${proc.key}_custom_${ci.key}`]) || 0;
@@ -788,31 +822,31 @@ export default function PartNoWiseCostSheetView() {
               <Table className="border-separate border-spacing-0 w-full min-w-full">
                 <TableHeader>
                   <TableRow className="bg-[#9bc2e6]/25 dark:bg-[#9bc2e6]/10 text-slate-800 dark:text-slate-200 text-[10px] font-bold">
-                    <TableHead className="text-center font-bold text-xs border-r border-b border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-200 py-3 w-16 bg-[#9bc2e6]/20 dark:bg-[#9bc2e6]/5">
+                    <TableHead className="text-center font-bold text-xs border-r border-b-[2px] border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-200 py-3 w-16 bg-[#9bc2e6]/20 dark:bg-[#9bc2e6]/5">
                       SL NO
                     </TableHead>
-                    <TableHead className="text-left font-bold text-xs border-r border-b border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-200 py-3 bg-[#9bc2e6]/20 dark:bg-[#9bc2e6]/5">
+                    <TableHead className="text-left font-bold text-xs border-r border-b-[2px] border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-200 py-3 bg-[#9bc2e6]/20 dark:bg-[#9bc2e6]/5">
                       Part Name
                     </TableHead>
-                    <TableHead className="text-left font-bold text-xs border-r border-b border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-200 py-3 bg-[#9bc2e6]/20 dark:bg-[#9bc2e6]/5">
+                    <TableHead className="text-left font-bold text-xs border-r border-b-[2px] border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-200 py-3 bg-[#9bc2e6]/20 dark:bg-[#9bc2e6]/5">
                       Part Number
                     </TableHead>
-                    <TableHead className="text-left font-bold text-xs border-r border-b border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-200 py-3 bg-[#9bc2e6]/20 dark:bg-[#9bc2e6]/5">
+                    <TableHead className="text-left font-bold text-xs border-r border-b-[2px] border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-200 py-3 bg-[#9bc2e6]/20 dark:bg-[#9bc2e6]/5">
                       Material Name
                     </TableHead>
-                    <TableHead className="text-right font-bold text-xs border-r border-b border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-200 py-3 whitespace-normal leading-tight max-w-[200px] bg-[#9bc2e6]/20 dark:bg-[#9bc2e6]/5">
+                    <TableHead className="text-right font-bold text-xs border-r border-b-[2px] border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-200 py-3 whitespace-normal leading-tight max-w-[200px] bg-[#9bc2e6]/20 dark:bg-[#9bc2e6]/5">
                       Manufacturing Cost per Component (Origin Raw Material)
                     </TableHead>
-                    <TableHead className="text-right font-bold text-xs border-r border-b border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-200 py-3 whitespace-normal leading-tight max-w-[200px] bg-[#9bc2e6]/20 dark:bg-[#9bc2e6]/5">
+                    <TableHead className="text-right font-bold text-xs border-r border-b-[2px] border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-200 py-3 whitespace-normal leading-tight max-w-[200px] bg-[#9bc2e6]/20 dark:bg-[#9bc2e6]/5">
                       Manufacturing Cost per Component (Scrap)
                     </TableHead>
-                    <TableHead className="text-right font-bold text-xs border-r border-b border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-200 py-3 whitespace-normal leading-tight bg-[#9bc2e6]/20 dark:bg-[#9bc2e6]/5">
+                    <TableHead className="text-right font-bold text-xs border-r border-b-[2px] border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-200 py-3 whitespace-normal leading-tight bg-[#9bc2e6]/20 dark:bg-[#9bc2e6]/5">
                       Selling cost per Component
                     </TableHead>
-                    <TableHead className="text-right font-bold text-xs border-r border-b border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-200 py-3 whitespace-normal leading-tight bg-[#9bc2e6]/20 dark:bg-[#9bc2e6]/5">
+                    <TableHead className="text-right font-bold text-xs border-r border-b-[2px] border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-200 py-3 whitespace-normal leading-tight bg-[#9bc2e6]/20 dark:bg-[#9bc2e6]/5">
                       Profit in Rs
                     </TableHead>
-                    <TableHead className="text-right font-bold text-xs border-b border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-200 py-3 bg-[#9bc2e6]/20 dark:bg-[#9bc2e6]/5">
+                    <TableHead className="text-right font-bold text-xs border-b-[2px] border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-200 py-3 bg-[#9bc2e6]/20 dark:bg-[#9bc2e6]/5">
                       Profit in %
                     </TableHead>
                   </TableRow>
@@ -829,7 +863,7 @@ export default function PartNoWiseCostSheetView() {
                     return (
                       <TableRow 
                         key={row._id || index} 
-                        className="hover:bg-muted/10 border-b border-slate-200 dark:border-slate-800 transition-colors duration-150"
+                        className="hover:bg-muted/10 border-b-[2px] border-slate-200 dark:border-slate-800 transition-colors duration-150"
                       >
                         <TableCell className="p-3 border-r border-slate-200 dark:border-slate-800 text-center font-semibold text-xs font-mono text-muted-foreground">
                           {originalIndex}

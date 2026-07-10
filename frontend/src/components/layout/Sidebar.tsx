@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { usePathname } from "next/navigation";
@@ -32,11 +32,18 @@ interface SidebarProps {
   onToggle: () => void;
 }
 
-interface MenuItem {
-  icon: any;
+interface SubMenuItem {
   label: string;
   path: string;
   role?: "super-admin" | "admin";
+}
+
+interface MenuItem {
+  icon: any;
+  label: string;
+  path?: string;
+  role?: "super-admin" | "admin";
+  subItems?: SubMenuItem[];
 }
 
 const menuItems: MenuItem[] = [
@@ -47,7 +54,15 @@ const menuItems: MenuItem[] = [
   { icon: Building2, label: "Departments", path: "/departments", role: "super-admin" },
   { icon: Table, label: "Production Tables", path: "/production-tables", role: "super-admin" },
   { icon: Cpu, label: "Machines", path: "/machines", role: "super-admin" },
-  { icon: Calculator, label: "Salary Capital Charges", path: "/salary-capital-charges", role: "super-admin" },
+  { 
+    icon: Calculator, 
+    label: "Capital Investments", 
+    role: "super-admin",
+    subItems: [
+      { label: "Operators", path: "/capital-investments/operators", role: "super-admin" },
+      { label: "Equipments", path: "/capital-investments/equipments", role: "super-admin" },
+    ]
+  },
   { icon: Calculator, label: "Machine Hour Rate", path: "/machine-hour-rate", role: "super-admin" },
   { icon: Package, label: "Material Rate", path: "/material-rate", role: "super-admin" },
   { icon: FileText, label: "Final Cost Sheet", path: "/final-cost-sheet", role: "super-admin" },
@@ -60,21 +75,52 @@ export const Sidebar = ({ collapsed, onToggle }: SidebarProps) => {
   const pathname = usePathname();
   const { user } = useAuth();
 
+  const [expandedMenus, setExpandedMenus] = useState<Record<string, boolean>>({});
+
+  useEffect(() => {
+    // Auto-expand the parent menu if its sub-item is active, else keep collapsed
+    const newExpanded: Record<string, boolean> = {};
+    menuItems.forEach((item) => {
+      if (item.subItems) {
+        const isActive = item.subItems.some((sub) => pathname === sub.path);
+        if (isActive) {
+          newExpanded[item.label] = true;
+        }
+      }
+    });
+    setExpandedMenus(newExpanded);
+  }, [pathname]);
+
+  const toggleExpanded = (label: string) => {
+    setExpandedMenus((prev) => ({
+      ...prev,
+      [label]: !prev[label],
+    }));
+  };
+
   const filteredItems = menuItems.filter((item) => {
     if (user?.module === "expenses") {
-      return (
-        item.path === "/" || 
-        item.path === "/users" || 
-        item.path === "/settings" || 
-        item.path === "/salary-capital-charges" ||
-        item.path === "/machine-hour-rate" ||
-        item.path === "/material-rate" ||
-        item.path === "/final-cost-sheet" ||
-        item.path === "/part-no-wise-cost-sheet"
-      );
+      const allowedPaths = [
+        "/",
+        "/users",
+        "/settings",
+        "/machine-hour-rate",
+        "/material-rate",
+        "/final-cost-sheet",
+        "/part-no-wise-cost-sheet",
+        "/capital-investments/operators",
+        "/capital-investments/equipments"
+      ];
+      
+      if (item.subItems) {
+        // If any subitem is allowed, keep the parent
+        return item.subItems.some(sub => allowedPaths.includes(sub.path));
+      }
+      return item.path ? allowedPaths.includes(item.path) : false;
     }
+    
+    // For non-expenses module, hide expense related links
     if (
-      item.path === "/salary-capital-charges" ||
       item.path === "/machine-hour-rate" ||
       item.path === "/material-rate" ||
       item.path === "/final-cost-sheet" ||
@@ -82,9 +128,27 @@ export const Sidebar = ({ collapsed, onToggle }: SidebarProps) => {
     ) {
       return false;
     }
+    
+    if (item.label === "Capital Investments") {
+      return false; // Hide from admin portal as per original logic? Original logic had salary-capital-charges hidden.
+    }
+
     if (!item.role) return true;
     if (user?.role === "super-admin") return true;
     return item.role === user?.role;
+  }).map(item => {
+    // Also filter subItems if present based on role
+    if (item.subItems) {
+      return {
+        ...item,
+        subItems: item.subItems.filter(sub => {
+          if (!sub.role) return true;
+          if (user?.role === "super-admin") return true;
+          return sub.role === user?.role;
+        })
+      };
+    }
+    return item;
   });
 
   return (
@@ -135,21 +199,74 @@ export const Sidebar = ({ collapsed, onToggle }: SidebarProps) => {
       <nav className="mt-4 px-2">
         <ul className="space-y-1">
           {filteredItems.map((item) => {
-            const isActive = pathname === item.path;
+            const hasSubItems = item.subItems && item.subItems.length > 0;
+            const isExpanded = expandedMenus[item.label];
+            
+            // Check if any sub-item is active
+            const isSubItemActive = hasSubItems && item.subItems!.some(sub => pathname === sub.path);
+            const isActive = !hasSubItems && pathname === item.path;
+            
             return (
-              <li key={item.path}>
-                <Link
-                  href={item.path}
-                  className={cn(
-                    "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm transition-all duration-200",
-                    isActive
-                      ? "bg-sidebar-accent text-sidebar-primary"
-                      : "text-sidebar-muted hover:bg-sidebar-accent hover:text-sidebar-foreground"
-                  )}
-                >
-                  <item.icon className={cn("h-5 w-5 flex-shrink-0")} />
-                  {!collapsed && <span>{item.label}</span>}
-                </Link>
+              <li key={item.label}>
+                {hasSubItems ? (
+                  <button
+                    onClick={() => !collapsed && toggleExpanded(item.label)}
+                    className={cn(
+                      "w-full flex items-center justify-between rounded-lg px-3 py-2.5 text-sm transition-all duration-200",
+                      isSubItemActive
+                        ? "bg-sidebar-accent/50 text-sidebar-primary"
+                        : "text-sidebar-muted hover:bg-sidebar-accent hover:text-sidebar-foreground"
+                    )}
+                  >
+                    <div className="flex items-center gap-3">
+                      <item.icon className={cn("h-5 w-5 flex-shrink-0")} />
+                      {!collapsed && <span>{item.label}</span>}
+                    </div>
+                    {!collapsed && (
+                      <div className={cn("transition-transform duration-200", isExpanded ? "rotate-90" : "")}>
+                        <ChevronRight className="h-4 w-4" />
+                      </div>
+                    )}
+                  </button>
+                ) : (
+                  <Link
+                    href={item.path!}
+                    className={cn(
+                      "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm transition-all duration-200",
+                      isActive
+                        ? "bg-sidebar-accent text-sidebar-primary"
+                        : "text-sidebar-muted hover:bg-sidebar-accent hover:text-sidebar-foreground"
+                    )}
+                  >
+                    <item.icon className={cn("h-5 w-5 flex-shrink-0")} />
+                    {!collapsed && <span>{item.label}</span>}
+                  </Link>
+                )}
+                
+                {/* Sub-items rendering */}
+                {hasSubItems && !collapsed && isExpanded && (
+                  <ul className="mt-1 space-y-1 ml-9">
+                    {item.subItems!.map((subItem) => {
+                      const isSubActive = pathname === subItem.path;
+                      return (
+                        <li key={subItem.path}>
+                          <Link
+                            href={subItem.path}
+                            className={cn(
+                              "flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-all duration-200",
+                              isSubActive
+                                ? "bg-sidebar-accent text-sidebar-primary font-medium"
+                                : "text-sidebar-muted hover:text-sidebar-foreground"
+                            )}
+                          >
+                            <span className="h-1.5 w-1.5 rounded-full bg-current opacity-50" />
+                            <span>{subItem.label}</span>
+                          </Link>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                )}
               </li>
             );
           })}
