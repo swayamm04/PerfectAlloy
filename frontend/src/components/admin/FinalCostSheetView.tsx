@@ -1553,12 +1553,6 @@ export default function FinalCostSheetView() {
       return updated;
     });
 
-    setColumnUserAssignments(prev => {
-      const next = { ...prev };
-      delete next[colKey];
-      saveColumnAssignments(next);
-      return next;
-    });
 
     toast.info(`Column "${colName}" deleted successfully!`);
   };
